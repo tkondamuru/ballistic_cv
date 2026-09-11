@@ -98,6 +98,7 @@ typedef _DetectBallRgbaC = DetectionResultStruct Function(
   Int32 width,
   Int32 height,
   Int32 isBgra,
+  Int32 rowStride,
   Int32 hMin,
   Int32 hMax,
   Int32 sMin,
@@ -111,6 +112,7 @@ typedef _DetectBallRgbaDart = DetectionResultStruct Function(
   int width,
   int height,
   int isBgra,
+  int rowStride,
   int hMin,
   int hMax,
   int sMin,
@@ -233,7 +235,7 @@ class NativeTracker {
         frameWidth: struct.frameWidth,
         frameHeight: struct.frameHeight,
       );
-    } else if (image.format.group == ImageFormatGroup.bgra8888 || image.planes.length == 1) {
+    } else if (image.format.group == ImageFormatGroup.bgra8888) {
       final plane = image.planes[0];
       if (_rgbaBuffer == null || _rgbaBufferSize < plane.bytes.length) {
         if (_rgbaBuffer != null) malloc.free(_rgbaBuffer!);
@@ -248,6 +250,7 @@ class NativeTracker {
         image.width,
         image.height,
         isBgra,
+        plane.bytesPerRow,
         hMin, hMax,
         sMin, sMax,
         vMin, vMax,

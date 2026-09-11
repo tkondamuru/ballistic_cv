@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -61,9 +62,6 @@ class _TrackerHomeScreenState extends State<TrackerHomeScreen> with WidgetsBindi
   double _fps = 0.0;
   DateTime _lastFpsCheck = DateTime.now();
 
-  // Native FFI Version
-  String _nativeVersion = 'Checking...';
-
   // Calibrated HSV bounds for Green Ball
   final int _hMin = 35;
   final int _hMax = 85;
@@ -83,13 +81,8 @@ class _TrackerHomeScreenState extends State<TrackerHomeScreen> with WidgetsBindi
   void _initNativeTracker() {
     try {
       final version = NativeTracker.instance.getVersion();
-      setState(() {
-        _nativeVersion = 'v$version (OpenCV 4.13.0)';
-      });
+      debugPrint('Native tracker initialized: v$version (OpenCV 4.13.0)');
     } catch (e) {
-      setState(() {
-        _nativeVersion = 'Error: $e';
-      });
       debugPrint('Native tracker init error: $e');
     }
   }
@@ -110,7 +103,9 @@ class _TrackerHomeScreenState extends State<TrackerHomeScreen> with WidgetsBindi
       camera,
       ResolutionPreset.low, // 360p / 480p for 60 FPS throughput
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
+      imageFormatGroup: Platform.isIOS
+          ? ImageFormatGroup.bgra8888
+          : ImageFormatGroup.yuv420,
     );
 
     try {

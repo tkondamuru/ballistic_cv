@@ -1,6 +1,6 @@
 # BallisticCV ⚡
 
-> A high-speed, on-device mobile computer vision app built with Flutter and native C++ (`opencv-mobile`) for real-time 60 FPS ping-pong ball tracking and rebound detection. It pairs zero-copy camera frame processing with a dynamic cyberpunk HUD and neon trajectory overlays.
+> A high-speed, on-device mobile computer vision app built with Flutter and native C++ (`opencv-mobile`) for real-time 60 FPS ping-pong ball tracking and rebound detection. It pairs camera frame processing with a dynamic cyberpunk HUD and neon trajectory overlays.
 
 ---
 
@@ -16,7 +16,7 @@
   * Neon fading comet trajectory trail.
 * **Cross-Platform**:
   * Android (Poco and other ARM devices via NDK & CMake).
-  * iOS (iPhone AVFoundation 60 FPS).
+  * iOS (iPhone AVFoundation).
 
 ---
 
@@ -26,9 +26,9 @@
 ┌────────────────────────────────────────────────────────┐
 │        Camera Capture (CameraX / AVFoundation)         │
 │   • Sensor Preset: Low (360p / 480p)                   │
-│   • Locked high frame rate                             │
+│   • Device-dependent capture rate                             │
 └──────────────────────────┬─────────────────────────────┘
-                           │ Raw Plane Pointer (Zero-Copy)
+                           │ Camera bytes copied to native buffers
                            ▼
 ┌────────────────────────────────────────────────────────┐
 │      Native C++ Engine (libnative_tracker.so)          │
@@ -53,7 +53,7 @@
 ## 🚀 Getting Started
 
 ### Prerequisites
-* Flutter SDK (`>=3.16.0`)
+* Flutter SDK (`>=3.32.0`; validated with 3.41.1)
 * Android Studio with **NDK (Side by side)** and **CMake** installed
 
 ### Run on Android
@@ -67,10 +67,51 @@ flutter run
 flutter build apk --debug
 ```
 
-### Build on iOS (Mac)
+### Build and run on iPhone (Mac)
+
+Requires Xcode with the iOS SDK, CocoaPods, and Flutter. If using the restored
+SDK in this checkout, run `export PATH="$PWD/.tools/flutter/bin:$PATH"` first.
+
 ```bash
-cd ios
-open Runner.xcworkspace
-# Select your Personal Team under Signing & Capabilities, then:
-flutter run -d <iphone-device-id>
+flutter pub get
+flutter build ios --release --no-codesign
+open ios/Runner.xcworkspace
 ```
+
+In Xcode, select Runner → Signing & Capabilities and choose your Apple development
+team. Connect and unlock the iPhone, trust the Mac, and enable Developer Mode.
+Then, from the project root:
+
+```bash
+flutter devices
+flutter run --release -d <iphone-device-id>
+```
+
+CocoaPods downloads the pinned OpenCV 4.13.0 iOS framework and verifies its SHA-256
+using `ios/OpenCVMobile.podspec`. This dependency targets physical iOS devices;
+it does not include an iOS Simulator slice. Runner compiles the C++ tracker and
+exports its C entry points for Dart FFI. iOS uses BGRA camera frames with explicit
+row strides; Android uses YUV420. Both native implementations must keep the same
+FFI signature when changing the shared Dart bindings.
+
+The current pipeline copies camera bytes into reusable native buffers and runs
+tracking synchronously. Camera FPS and tracking throughput must be measured on
+the device; 60 FPS is a target, not currently enforced by the camera configuration.
+
+### Native regression test (Mac)
+
+Download and extract the matching `opencv-mobile-4.13.0-macos.zip` from the
+[opencv-mobile v36 release](https://github.com/nihui/opencv-mobile/releases/tag/v36).
+With `opencv2.framework` in `/tmp/ballistic-opencv-macos`, run:
+
+```bash
+clang++ -std=c++17 -F/tmp/ballistic-opencv-macos \
+  test/native_tracker_test.cpp ios/Runner/native_tracker.cpp \
+  -framework opencv2 -framework Accelerate -framework Foundation \
+  -framework CoreGraphics -framework CoreVideo -framework AVFoundation \
+  -lz -o /tmp/ballistic-native-test
+/tmp/ballistic-native-test
+```
+
+This verifies packed and padded BGRA frames produce matching detections and
+checks invalid row strides, null input, and frames without a ball.

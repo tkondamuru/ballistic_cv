@@ -164,6 +164,7 @@ DetectionResult detect_ball_rgba(
     int width,
     int height,
     int is_bgra,
+    int row_stride,
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max
@@ -176,11 +177,11 @@ DetectionResult detect_ball_rgba(
     fallback.y = 0;
     fallback.radius = 0;
 
-    if (!rgba_bytes || width <= 0 || height <= 0) {
+    if (!rgba_bytes || width <= 0 || height <= 0 || row_stride < static_cast<int64_t>(width) * 4) {
         return fallback;
     }
 
-    cv::Mat img(height, width, CV_8UC4, const_cast<uint8_t*>(rgba_bytes));
+    cv::Mat img(height, width, CV_8UC4, const_cast<uint8_t*>(rgba_bytes), row_stride);
     cv::Mat bgr;
     if (is_bgra) {
         cv::cvtColor(img, bgr, cv::COLOR_BGRA2BGR);

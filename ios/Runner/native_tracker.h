@@ -16,11 +16,13 @@ typedef struct {
     int frame_height; // Processed height
 } DetectionResult;
 
+#define TRACKER_EXPORT __attribute__((visibility("default"))) __attribute__((used))
+
 // Test function to verify FFI link
-int get_tracker_version();
+TRACKER_EXPORT int get_tracker_version();
 
 // Android CameraImage YUV420_888 frame detection
-DetectionResult detect_ball_yuv420(
+TRACKER_EXPORT DetectionResult detect_ball_yuv420(
     const uint8_t* y_plane,
     const uint8_t* u_plane,
     const uint8_t* v_plane,
@@ -35,11 +37,12 @@ DetectionResult detect_ball_yuv420(
 );
 
 // BGRA/RGBA frame detection (for iOS or test bitmaps)
-DetectionResult detect_ball_rgba(
+TRACKER_EXPORT DetectionResult detect_ball_rgba(
     const uint8_t* rgba_bytes,
     int width,
     int height,
     int is_bgra,
+    int row_stride,
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max

@@ -40,6 +40,7 @@ DetectionResult detect_ball_rgba(
     int width,
     int height,
     int is_bgra,
+    int row_stride,
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max
