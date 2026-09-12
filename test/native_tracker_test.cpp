@@ -21,7 +21,7 @@ int main() {
         }
     }
     const auto detect = [&](const uint8_t* bytes, int stride) {
-        return detect_ball_rgba(bytes, width, height, 1, stride, 35, 85, 70, 255, 60, 255);
+        return detect_ball_rgba(bytes, width, height, 1, stride, 35, 85, 70, 255, 60, 255, 0);
     };
     const auto a = detect(packed.data(), packedStride);
     const auto b = detect(padded.data(), paddedStride);

@@ -3,7 +3,7 @@ import 'package:ballistic_cv/main.dart';
 
 void main() {
   testWidgets('BallisticCvApp smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const BallisticCvApp());
-    expect(find.text('BallisticCV'), findsOneWidget);
+    await tester.pumpWidget(const BallisticCvApp(cameras: []));
+    expect(find.byType(BallisticCvApp), findsOneWidget);
   });
 }

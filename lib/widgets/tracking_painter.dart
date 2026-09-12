@@ -5,11 +5,13 @@ import '../native/native_cv.dart';
 class TrackingPoint {
   final Offset position;
   final double radius;
+  final bool isPredicted;
   final DateTime timestamp;
 
   TrackingPoint({
     required this.position,
     required this.radius,
+    required this.isPredicted,
     required this.timestamp,
   });
 }
@@ -34,9 +36,7 @@ class TrackingPainter extends CustomPainter {
     final double frameW = detection!.frameWidth.toDouble();
     final double frameH = detection!.frameHeight.toDouble();
 
-    // Transform camera sensor coordinates to Flutter screen coordinates
-    // On Android/iOS in portrait, sensor coordinates are rotated 90 degrees:
-    // camera X -> screen Y, camera Y -> screen (width - X)
+    // Sensor to screen coordinate transformation
     Offset toScreenOffset(double camX, double camY) {
       if (sensorOrientation == 90) {
         final screenX = (1.0 - (camY / frameH)) * size.width;
@@ -49,16 +49,32 @@ class TrackingPainter extends CustomPainter {
       }
     }
 
-    // 1. Draw Fading Comet Trail
+    // Velocity vector transformation
+    Offset toScreenVector(double vx, double vy) {
+      if (sensorOrientation == 90) {
+        final screenVx = -vy * (size.width / frameH);
+        final screenVy = vx * (size.height / frameW);
+        return Offset(screenVx, screenVy);
+      } else {
+        final screenVx = vx * (size.width / frameW);
+        final screenVy = vy * (size.height / frameH);
+        return Offset(screenVx, screenVy);
+      }
+    }
+
+    // 1. Draw Fading Comet Trail (matching track_video.py)
     if (trail.length > 1) {
       for (int i = 0; i < trail.length - 1; i++) {
         final t = (i + 1) / trail.length; // 0.0 -> 1.0 (head)
         final p1 = toScreenOffset(trail[i].position.dx, trail[i].position.dy);
         final p2 = toScreenOffset(trail[i + 1].position.dx, trail[i + 1].position.dy);
 
+        final isPred = trail[i + 1].isPredicted;
+        final baseColor = isPred ? Colors.orangeAccent : const Color(0xFF00FF66);
+
         final trailPaint = Paint()
-          ..color = Colors.cyanAccent.withValues(alpha: 0.15 + 0.85 * t)
-          ..strokeWidth = 1.5 + 3.5 * t
+          ..color = baseColor.withValues(alpha: (0.15 + 0.85 * t).clamp(0.0, 1.0))
+          ..strokeWidth = 2.0 + 4.0 * t
           ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke;
 
@@ -71,22 +87,38 @@ class TrackingPainter extends CustomPainter {
       final center = toScreenOffset(detection!.x, detection!.y);
       final radius = max(18.0, detection!.radius * (size.width / frameH));
 
+      final mainColor = detection!.isPredicted ? Colors.orangeAccent : const Color(0xFF00FF66);
+
       // Outer glow
       final glowPaint = Paint()
-        ..color = const Color(0xFF00FF66).withValues(alpha: 0.3)
+        ..color = mainColor.withValues(alpha: 0.35)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 8.0
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
       canvas.drawCircle(center, radius + 4, glowPaint);
 
-      // Main neon green target circle
+      // Main target circle
       final ringPaint = Paint()
-        ..color = const Color(0xFF00FF66)
+        ..color = mainColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0;
       canvas.drawCircle(center, radius, ringPaint);
 
-      // Center crosshair
+      // Velocity direction arrow
+      final vVector = toScreenVector(detection!.vx, detection!.vy);
+      final speed = vVector.distance;
+      if (speed > 2.0) {
+        final arrowEnd = center + vVector * 0.4;
+        final arrowPaint = Paint()
+          ..color = Colors.cyanAccent
+          ..strokeWidth = 2.5
+          ..strokeCap = StrokeCap.round;
+
+        canvas.drawLine(center, arrowEnd, arrowPaint);
+        canvas.drawCircle(arrowEnd, 3.5, Paint()..color = Colors.cyanAccent);
+      }
+
+      // Center crosshair dot
       final crossPaint = Paint()
         ..color = Colors.white
         ..style = PaintingStyle.fill;
@@ -94,7 +126,7 @@ class TrackingPainter extends CustomPainter {
 
       // Crosshair tick marks
       final tickPaint = Paint()
-        ..color = const Color(0xFF00FF66)
+        ..color = mainColor
         ..strokeWidth = 2.0;
       canvas.drawLine(center + const Offset(-8, 0), center + const Offset(-4, 0), tickPaint);
       canvas.drawLine(center + const Offset(4, 0), center + const Offset(8, 0), tickPaint);
