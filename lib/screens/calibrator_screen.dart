@@ -1,320 +1,329 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import '../calibration/color_samples.dart';
 import '../models/hsv_profile.dart';
-import '../native/native_cv.dart';
-import '../widgets/camera_reticle.dart';
-import 'tracker_screen.dart';
 
 class CalibratorScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
-
   const CalibratorScreen({super.key, required this.cameras});
-
   @override
   State<CalibratorScreen> createState() => _CalibratorScreenState();
 }
 
 class _CalibratorScreenState extends State<CalibratorScreen> {
   CameraController? _controller;
-  bool _isProcessing = false;
-  bool _isSampling = false;
   CameraImage? _lastFrame;
-
-  HsvProfile _currentProfile = HsvProfile.defaultGreen;
-  Color _sampledColor = const Color(0xFF00FF66);
-  String _statusText = 'Hold ball inside reticle & tap sample';
+  final _samples = <List<HsvPixel>>[];
+  final _readings = <String>[];
+  HsvProfile? _profile;
+  ui.Image? _preview;
+  bool _busy = false;
+  bool _closed = false;
+  String? _error;
+  static const _instructions = [
+    'Cover the small circle with a normally lit area of the ball.',
+    'Move to a slightly shaded area. Keep the circle covered.',
+    'Turn the ball slightly and sample another angle. Avoid glare.',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadSavedProfile();
     _initCamera();
-  }
-
-  Future<void> _loadSavedProfile() async {
-    final saved = await HsvProfile.load();
-    if (saved != null && mounted) {
-      setState(() {
-        _currentProfile = saved;
-      });
-    }
   }
 
   Future<void> _initCamera() async {
     if (widget.cameras.isEmpty) return;
-
     final camera = widget.cameras.firstWhere(
       (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => widget.cameras.first,
     );
-
     final controller = CameraController(
       camera,
       ResolutionPreset.low,
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
+      imageFormatGroup: Platform.isIOS
+          ? ImageFormatGroup.bgra8888
+          : ImageFormatGroup.yuv420,
     );
-
+    _controller = controller;
     try {
       await controller.initialize();
-      if (!mounted) return;
-
-      setState(() {
-        _controller = controller;
-      });
-
+      if (!mounted || _closed) {
+        await controller.dispose();
+        return;
+      }
       await controller.startImageStream((image) {
-        if (_isProcessing) return;
-        _isProcessing = true;
+        if (!mounted || _closed) return;
+        final first = _lastFrame == null;
         _lastFrame = image;
-        _isProcessing = false;
+        if (first) setState(() {});
       });
-    } catch (e) {
-      debugPrint('Camera init error in Calibrator: $e');
+      if (mounted) setState(() {});
+    } catch (e, stack) {
+      _report('Camera error', e, stack);
     }
   }
 
-  void _sampleAndLockColor() {
-    if (_lastFrame == null || _isSampling) return;
+  void _report(String label, Object error, StackTrace stack) {
+    debugPrint('$label: $error');
+    final image = _lastFrame;
+    if (image != null) {
+      debugPrint(
+        'Frame ${image.width}x${image.height}, ${image.format.group}, '
+        '${image.planes.length} planes, strides=${image.planes.map((p) => p.bytesPerRow).toList()}',
+      );
+    }
+    debugPrint(stack.toString());
+    if (mounted) {
+      setState(() {
+        _error = '$label: $error';
+        _busy = false;
+      });
+    }
+  }
 
+  Future<void> _sample() async {
+    final frame = _lastFrame;
+    if (frame == null || _busy || _samples.length >= 3) return;
     setState(() {
-      _isSampling = true;
-      _statusText = 'Sampling median HSV color...';
+      _busy = true;
+      _error = null;
     });
-
     try {
-      final image = _lastFrame!;
-      final reticleX = image.width ~/ 2;
-      final reticleY = image.height ~/ 2;
-      final reticleRadius = image.width ~/ 6;
-
-      final res = NativeTracker.instance.sampleHsvColor(
-        image,
-        reticleX: reticleX,
-        reticleY: reticleY,
-        reticleRadius: reticleRadius,
+      final pixels = sampleCenter(frame);
+      final individual = combineSamples([pixels]);
+      final reading =
+          'Sample ${_samples.length + 1}: H=${individual.hMed} '
+          '(${individual.hMed * 2}°), S=${individual.sMed}, V=${individual.vMed}';
+      debugPrint(
+        '[Calibration] $reading; pixels=${pixels.length}; '
+        'H range=${individual.hMin}..${individual.hMax} (OpenCV H 0..179, S/V 0..255)',
       );
-
-      // Convert sampled HSV to Flutter Color for preview
-      final hsvColor = HSVColor.fromAHSV(
-        1.0,
-        (res.hMed * 2.0).clamp(0.0, 360.0), // OpenCV H (0..180) to HSVColor H (0..360)
-        (res.sMed / 255.0).clamp(0.0, 1.0),
-        (res.vMed / 255.0).clamp(0.0, 1.0),
-      );
-
-      final newProfile = HsvProfile(
-        hMed: res.hMed,
-        sMed: res.sMed,
-        vMed: res.vMed,
-        hMin: res.hMin,
-        hMax: res.hMax,
-        sMin: res.sMin,
-        sMax: 255,
-        vMin: res.vMin,
-        vMax: 255,
-      );
-
-      newProfile.save();
-
-      setState(() {
-        _currentProfile = newProfile;
-        _sampledColor = hsvColor.toColor();
-        _statusText = 'Color locked! Dynamic H:[${res.hMin}..${res.hMax}], S:[${res.sMin}..255], V:[${res.vMin}..255]';
-        _isSampling = false;
-      });
-
-      // Brief delay to display swatch, then transition to Tracker Screen
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => TrackerScreen(
-              cameras: widget.cameras,
-              hsvProfile: newProfile,
-            ),
-          ),
+      final candidate = [..._samples, pixels];
+      final combined = combineSamples(candidate);
+      _samples.add(pixels);
+      _readings.add(reading);
+      if (_samples.length == 3) {
+        _profile = combined;
+        debugPrint(
+          '[Calibration] Combined H=${combined.hMin}..${combined.hMax}, '
+          'S=${combined.sMin}..${combined.sMax}, V=${combined.vMin}..${combined.vMax}',
         );
-      });
-    } catch (e) {
-      setState(() {
-        _statusText = 'Sampling error: $e';
-        _isSampling = false;
-      });
+        await _makePreview(frame, combined);
+      }
+      if (mounted) {
+        setState(() {
+          _busy = false;
+        });
+      }
+    } catch (e, stack) {
+      _report('Sampling error', e, stack);
+    }
+  }
+
+  Future<void> _makePreview(CameraImage frame, HsvProfile profile) async {
+    final bytes = Uint8List(frame.width * frame.height * 4);
+    for (int y = 0; y < frame.height; y++) {
+      for (int x = 0; x < frame.width; x++) {
+        final p = pixelHsv(frame, x, y);
+        final color = HSVColor.fromAHSV(
+          1,
+          p.h * 2.0,
+          p.s / 255,
+          p.v / 255,
+        ).toColor();
+        final match = matchesProfile(p, profile);
+        final i = (y * frame.width + x) * 4;
+        bytes[i] = match ? 255 : (color.r * 90).round();
+        bytes[i + 1] = match ? 0 : (color.g * 90).round();
+        bytes[i + 2] = match ? 255 : (color.b * 90).round();
+        bytes[i + 3] = 255;
+      }
+    }
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    final descriptor = ui.ImageDescriptor.raw(
+      buffer,
+      width: frame.width,
+      height: frame.height,
+      pixelFormat: ui.PixelFormat.rgba8888,
+    );
+    final codec = await descriptor.instantiateCodec();
+    final image = (await codec.getNextFrame()).image;
+    codec.dispose();
+    descriptor.dispose();
+    buffer.dispose();
+    if (!mounted) {
+      image.dispose();
+      return;
+    }
+    _preview?.dispose();
+    setState(() {
+      _preview = image;
+    });
+  }
+
+  void _reset() {
+    _preview?.dispose();
+    setState(() {
+      _preview = null;
+      _profile = null;
+      _samples.clear();
+      _readings.clear();
+      _error = null;
+    });
+  }
+
+  Future<void> _save() async {
+    if (_profile == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      // Release the camera before the tracker opens it.
+      _closed = true;
+      await _controller?.dispose();
+      _controller = null;
+      if (!mounted) return;
+      Navigator.of(context).pop(_profile);
+    } catch (e, stack) {
+      _report('Save error', e, stack);
     }
   }
 
   @override
   void dispose() {
+    _closed = true;
     _controller?.dispose();
+    _preview?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasCamera = _controller != null && _controller!.value.isInitialized;
-
+    final ready = _controller?.value.isInitialized ?? false;
+    final reviewing = _samples.length == 3;
     return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. Live Camera Feed
-          if (hasCamera)
-            CameraPreview(_controller!)
-          else
-            const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00FF66)),
+      appBar: AppBar(
+        title: Text(
+          reviewing
+              ? 'Review color match'
+              : 'Sample ball color (${_samples.length}/3)',
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                reviewing
+                    ? 'Frozen preview: magenta pixels match. Check the ball and background before saving.'
+                    : _instructions[_samples.length],
+                textAlign: TextAlign.center,
+              ),
             ),
-
-          // 2. Centered Target Reticle
-          const Center(
-            child: CameraReticle(
-              size: 140,
-              label: 'Position Ball Inside Reticle',
-            ),
-          ),
-
-          // 3. Top Cyberpunk Header Bar
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, left: 16, right: 16),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF00FF66), width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF00FF66).withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    // Color Swatch Circle
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: _sampledColor,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.0),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _sampledColor.withValues(alpha: 0.6),
-                            blurRadius: 8,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (!ready) {
+                    return const Center(child: Text('Waiting for camera…'));
+                  }
+                  // Contain the entire portrait preview; sample and target share its center and scale.
+                  final aspect = 1 / _controller!.value.aspectRatio;
+                  final width = math.min(
+                    constraints.maxWidth,
+                    constraints.maxHeight * aspect,
+                  );
+                  final height = width / aspect;
+                  final diameter =
+                      math.min(width, height) * sampleRadiusFraction * 2;
+                  return Center(
+                    child: SizedBox(
+                      width: width,
+                      height: height,
+                      child: Stack(
+                        fit: StackFit.expand,
                         children: [
-                          const Text(
-                            'SCREEN 1: COLOR PIPETTE',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
+                          if (_preview != null)
+                            RotatedBox(
+                              quarterTurns: _preview!.width > _preview!.height
+                                  ? (_controller!
+                                                .description
+                                                .sensorOrientation ~/
+                                            90) %
+                                        4
+                                  : 0,
+                              child: RawImage(
+                                image: _preview,
+                                fit: BoxFit.fill,
+                              ),
+                            )
+                          else
+                            CameraPreview(_controller!),
+                          if (!reviewing)
+                            Center(
+                              child: Container(
+                                width: diameter,
+                                height: diameter,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.greenAccent,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _statusText,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 11,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
-          ),
-
-          // 4. Bottom Action Area
-          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 24, left: 20, right: 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Dynamic Bounds Chip
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white24),
-                      ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final reading in _readings)
+                    Text(reading, style: const TextStyle(fontSize: 12)),
+                  if (_error != null)
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  const SizedBox(height: 8),
+                  if (reviewing)
+                    ElevatedButton(
+                      onPressed: _busy || _preview == null ? null : _save,
+                      child: const Text('Save object'),
+                    )
+                  else
+                    ElevatedButton(
+                      onPressed: _busy || _lastFrame == null ? null : _sample,
                       child: Text(
-                        'Active Bounds: H:[${_currentProfile.hMin}..${_currentProfile.hMax}] '
-                        'S:[${_currentProfile.sMin}..255] V:[${_currentProfile.vMin}..255]',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                        ),
+                        _busy
+                            ? 'Sampling…'
+                            : 'Take sample ${_samples.length + 1}',
                       ),
                     ),
-                    const SizedBox(height: 14),
-
-                    // Primary Button: Sample & Lock Ball Color
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton.icon(
-                        onPressed: _isSampling ? null : _sampleAndLockColor,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00FF66),
-                          foregroundColor: Colors.black,
-                          elevation: 8,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          shadowColor: const Color(0xFF00FF66).withValues(alpha: 0.5),
-                        ),
-                        icon: _isSampling
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.black,
-                                ),
-                              )
-                            : const Icon(Icons.colorize, size: 24),
-                        label: Text(
-                          _isSampling ? 'SAMPLING...' : 'SAMPLE & LOCK BALL COLOR',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
+                  if (_samples.isNotEmpty)
+                    TextButton(
+                      onPressed: _busy ? null : _reset,
+                      child: const Text('Retake all samples'),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

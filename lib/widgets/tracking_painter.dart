@@ -38,7 +38,7 @@ class TrackingPainter extends CustomPainter {
 
     // Sensor to screen coordinate transformation
     Offset toScreenOffset(double camX, double camY) {
-      if (sensorOrientation == 90) {
+      if (sensorOrientation == 90 && frameW > frameH) {
         final screenX = (1.0 - (camY / frameH)) * size.width;
         final screenY = (camX / frameW) * size.height;
         return Offset(screenX, screenY);
@@ -51,7 +51,7 @@ class TrackingPainter extends CustomPainter {
 
     // Velocity vector transformation
     Offset toScreenVector(double vx, double vy) {
-      if (sensorOrientation == 90) {
+      if (sensorOrientation == 90 && frameW > frameH) {
         final screenVx = -vy * (size.width / frameH);
         final screenVy = vx * (size.height / frameW);
         return Offset(screenVx, screenVy);

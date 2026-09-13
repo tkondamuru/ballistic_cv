@@ -34,6 +34,18 @@ int main() {
     assert(detect(padded.data(), packedStride - 1).detected == 0);
     assert(detect(nullptr, paddedStride).detected == 0);
     std::vector<uint8_t> black(packedStride * height, 0);
+    reset_kalman_tracker();
     assert(detect(black.data(), packedStride).detected == 0);
+    // Change the synthetic green ball to red and verify wrapped hue limits.
+    for (size_t i = 0; i < packed.size(); i += 4) {
+        packed[i + 2] = packed[i + 1];
+        packed[i + 1] = 0;
+    }
+    reset_kalman_tracker();
+    const auto red = detect_ball_rgba(packed.data(), width, height, 1, packedStride,
+        174, 6, 100, 255, 80, 255, 0);
+    assert(red.detected == 1);
+    reset_kalman_tracker();
+    assert(detect(packed.data(), packedStride).detected == 0);
     std::puts("Native tracker: packed/padded BGRA, invalid stride, null and empty frames passed.");
 }

@@ -2,18 +2,14 @@ import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'models/hsv_profile.dart';
 import 'native/native_cv.dart';
-import 'screens/calibrator_screen.dart';
-import 'screens/tracker_screen.dart';
+import 'screens/objects_screen.dart';
 
 List<CameraDescription> _cameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   try {
     _cameras = await availableCameras();
@@ -28,23 +24,13 @@ Future<void> main() async {
     debugPrint('Native tracker FFI init error: $e');
   }
 
-  final savedProfile = await HsvProfile.load();
-
-  runApp(BallisticCvApp(
-    cameras: _cameras,
-    savedProfile: savedProfile,
-  ));
+  runApp(BallisticCvApp(cameras: _cameras));
 }
 
 class BallisticCvApp extends StatelessWidget {
   final List<CameraDescription> cameras;
-  final HsvProfile? savedProfile;
 
-  const BallisticCvApp({
-    super.key,
-    required this.cameras,
-    this.savedProfile,
-  });
+  const BallisticCvApp({super.key, required this.cameras});
 
   @override
   Widget build(BuildContext context) {
@@ -59,9 +45,7 @@ class BallisticCvApp extends StatelessWidget {
           secondary: Colors.cyanAccent,
         ),
       ),
-      home: savedProfile != null
-          ? TrackerScreen(cameras: cameras, hsvProfile: savedProfile!)
-          : CalibratorScreen(cameras: cameras),
+      home: ObjectsScreen(cameras: cameras),
     );
   }
 }

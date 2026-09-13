@@ -1,28 +1,33 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import '../models/hsv_profile.dart';
+import '../calibration/color_samples.dart';
 import '../native/native_cv.dart';
 import '../widgets/tracking_painter.dart';
-import 'calibrator_screen.dart';
 
 class TrackerScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
   final HsvProfile hsvProfile;
+  final String objectName;
 
   const TrackerScreen({
     super.key,
     required this.cameras,
     required this.hsvProfile,
+    this.objectName = 'Object',
   });
 
   @override
   State<TrackerScreen> createState() => _TrackerScreenState();
 }
 
-class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserver {
+class _TrackerScreenState extends State<TrackerScreen>
+    with WidgetsBindingObserver {
   CameraController? _controller;
   bool _isProcessing = false;
+  bool _loggedFirstLock = false;
   DetectionResult? _lastDetection;
   final List<TrackingPoint> _trail = [];
 
@@ -36,6 +41,11 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     NativeTracker.instance.resetKalmanTracker();
+    final p = widget.hsvProfile;
+    debugPrint(
+      '[Tracking] Target HSV median=${p.hMed},${p.sMed},${p.vMed}; '
+      'H=${p.hMin}..${p.hMax}, S=${p.sMin}..${p.sMax}, V=${p.vMin}..${p.vMax}',
+    );
     _initCamera();
   }
 
@@ -51,7 +61,9 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
       camera,
       ResolutionPreset.low, // 360p / 480p for locked high throughput
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
+      imageFormatGroup: Platform.isIOS
+          ? ImageFormatGroup.bgra8888
+          : ImageFormatGroup.yuv420,
     );
 
     try {
@@ -84,6 +96,24 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
         enableMotion: false,
       );
 
+      if (!_loggedFirstLock && detection.detected && !detection.isPredicted) {
+        _loggedFirstLock = true;
+        debugPrint(
+          '[Tracking] FIRST LOCK: x=${detection.x}, y=${detection.y}, '
+          'radius=${detection.radius}; frame=${image.width}x${image.height}, '
+          'format=${image.format.group}, sensor=${_controller?.description.sensorOrientation}',
+        );
+        final pixel = pixelHsv(
+          image,
+          detection.x.round().clamp(0, image.width - 1),
+          detection.y.round().clamp(0, image.height - 1),
+        );
+        debugPrint(
+          '[Tracking] Pixel at filtered center: H=${pixel.h} (${pixel.h * 2}°), '
+          'S=${pixel.s}, V=${pixel.v}; within target=${matchesProfile(pixel, widget.hsvProfile)}',
+        );
+      }
+
       // FPS calculation
       _frameCount++;
       final now = DateTime.now();
@@ -99,12 +129,14 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
           _lastDetection = detection;
 
           if (detection.detected) {
-            _trail.add(TrackingPoint(
-              position: Offset(detection.x, detection.y),
-              radius: detection.radius,
-              isPredicted: detection.isPredicted,
-              timestamp: now,
-            ));
+            _trail.add(
+              TrackingPoint(
+                position: Offset(detection.x, detection.y),
+                radius: detection.radius,
+                isPredicted: detection.isPredicted,
+                timestamp: now,
+              ),
+            );
             // Keep trail up to 25 points for smooth motion curve (matching TRAIL_LENGTH in Python)
             if (_trail.length > 25) {
               _trail.removeAt(0);
@@ -124,16 +156,16 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     }
   }
 
-  void _recalibrate() {
-    _controller?.dispose();
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => CalibratorScreen(cameras: widget.cameras),
-      ),
-    );
+  Future<void> _recalibrate() async {
+    final controller = _controller;
+    _controller = null;
+    await controller?.dispose();
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   void _resetTrackerState() {
+    _loggedFirstLock = false;
     NativeTracker.instance.resetKalmanTracker();
     setState(() {
       _trail.clear();
@@ -164,6 +196,10 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     final hasCamera = _controller != null && _controller!.value.isInitialized;
 
     return Scaffold(
+      appBar: AppBar(
+        title: Text('${widget.objectName} · Tracking'),
+        leading: BackButton(onPressed: _recalibrate),
+      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -209,7 +245,10 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
 
                   return Container(
                     margin: const EdgeInsets.only(top: 6, left: 16, right: 16),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.85),
                       borderRadius: BorderRadius.circular(16),
@@ -235,7 +274,9 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                               style: TextStyle(
                                 color: _fps >= 55
                                     ? const Color(0xFF00FF66)
-                                    : (_fps >= 30 ? Colors.orangeAccent : Colors.redAccent),
+                                    : (_fps >= 30
+                                          ? Colors.orangeAccent
+                                          : Colors.redAccent),
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,
@@ -243,7 +284,10 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                             ),
                             Text(
                               'Target: 60 FPS',
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 11,
+                              ),
                             ),
                           ],
                         ),
@@ -264,7 +308,9 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                             const SizedBox(height: 2),
                             Text(
                               isTracking
-                                  ? (isPred ? '◐ PREDICTING' : '● KALMAN TRACKING')
+                                  ? (isPred
+                                        ? '◐ PREDICTING'
+                                        : '● KALMAN TRACKING')
                                   : '○ SEARCHING',
                               style: TextStyle(
                                 color: statusColor,
@@ -300,35 +346,68 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                       foregroundColor: const Color(0xFF00FF66),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(color: Color(0xFF00FF66), width: 1.5),
+                        side: const BorderSide(
+                          color: Color(0xFF00FF66),
+                          width: 1.5,
+                        ),
                       ),
-                      icon: const Icon(Icons.colorize, size: 20),
+                      icon: const Icon(Icons.arrow_back, size: 20),
                       label: const Text(
-                        'CALIBRATE',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        'ACTIVITIES',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
 
                     // Center Coordinate Readout
                     Builder(
                       builder: (context) {
-                        final isTracking = _lastDetection != null && _lastDetection!.detected;
+                        final isTracking =
+                            _lastDetection != null && _lastDetection!.detected;
                         return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.8),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: Colors.white12),
                           ),
-                          child: Text(
-                            isTracking
-                                ? '(${_lastDetection!.x.toInt()}, ${_lastDetection!.y.toInt()})'
-                                : '--',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontFamily: 'monospace',
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Tooltip(
+                                message: 'Sampled target color',
+                                child: Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white70),
+                                    color: HSVColor.fromAHSV(
+                                      1,
+                                      widget.hsvProfile.hMed * 2.0,
+                                      widget.hsvProfile.sMed / 255,
+                                      widget.hsvProfile.vMed / 255,
+                                    ).toColor(),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isTracking
+                                    ? '(${_lastDetection!.x.toInt()}, ${_lastDetection!.y.toInt()})'
+                                    : '--',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ],
                           ),
                         );
                       },
@@ -342,7 +421,10 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                       foregroundColor: Colors.white70,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(color: Colors.white24, width: 1.5),
+                        side: const BorderSide(
+                          color: Colors.white24,
+                          width: 1.5,
+                        ),
                       ),
                       child: const Icon(Icons.refresh, size: 22),
                     ),

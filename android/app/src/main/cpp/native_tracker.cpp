@@ -208,7 +208,15 @@ static DetectionResult process_bgr(
     cv::Mat color_mask;
     cv::Scalar lower(h_min, s_min, v_min);
     cv::Scalar upper(h_max, s_max, v_max);
-    cv::inRange(hsv, lower, upper, color_mask);
+    if (h_min <= h_max) {
+        cv::inRange(hsv, lower, upper, color_mask);
+    } else {
+        // Hue wraps around red at 179 -> 0.
+        cv::Mat other;
+        cv::inRange(hsv, cv::Scalar(h_min, s_min, v_min), cv::Scalar(179, s_max, v_max), color_mask);
+        cv::inRange(hsv, cv::Scalar(0, s_min, v_min), cv::Scalar(h_max, s_max, v_max), other);
+        cv::bitwise_or(color_mask, other, color_mask);
+    }
 
     // 3. Motion Differencing Mask (optional)
     cv::Mat gray, gray_blurred, mask;

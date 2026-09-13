@@ -31,14 +31,16 @@ typedef struct {
     int v_max;
 } CalibratedHsvResult;
 
+#define TRACKER_EXPORT __attribute__((visibility("default"))) __attribute__((used))
+
 // Version check
-int get_tracker_version();
+TRACKER_EXPORT int get_tracker_version();
 
 // Reset Kalman filter and motion tracking history
-void reset_kalman_tracker();
+TRACKER_EXPORT void reset_kalman_tracker();
 
 // Android CameraImage YUV420_888 frame detection
-DetectionResult detect_ball_yuv420(
+TRACKER_EXPORT DetectionResult detect_ball_yuv420(
     const uint8_t* y_plane,
     const uint8_t* u_plane,
     const uint8_t* v_plane,
@@ -54,7 +56,7 @@ DetectionResult detect_ball_yuv420(
 );
 
 // BGRA/RGBA frame detection (for iOS)
-DetectionResult detect_ball_rgba(
+TRACKER_EXPORT DetectionResult detect_ball_rgba(
     const uint8_t* rgba_bytes,
     int width,
     int height,
@@ -67,7 +69,7 @@ DetectionResult detect_ball_rgba(
 );
 
 // Reticle Color Sampling for Screen 1 Pipette Calibrator
-CalibratedHsvResult sample_hsv_color_rgba(
+TRACKER_EXPORT CalibratedHsvResult sample_hsv_color_rgba(
     const uint8_t* rgba_bytes,
     int width,
     int height,
@@ -78,7 +80,7 @@ CalibratedHsvResult sample_hsv_color_rgba(
     int reticle_radius
 );
 
-CalibratedHsvResult sample_hsv_color_yuv420(
+TRACKER_EXPORT CalibratedHsvResult sample_hsv_color_yuv420(
     const uint8_t* y_plane,
     const uint8_t* u_plane,
     const uint8_t* v_plane,
