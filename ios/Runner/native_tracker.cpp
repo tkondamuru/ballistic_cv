@@ -236,12 +236,15 @@ static DetectionResult process_bgr(
     }
     g_prev_gray = gray_blurred.clone();
 
-    // 4. Morphological OPEN and CLOSE (matching hsv_detector.py)
+    // 4. Morphological OPEN and CLOSE (matching hsv_detector.py).
+    // This fixed pixel kernel can remove small/fragmented ball masks. Zoom changes
+    // the mask's apparent size, so borderline detections can vary with zoom.
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
     cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
     cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
 
-    // 5. Contour Extraction & Weighted Scoring (score = area * circularity)
+    // 5. Contour Extraction & Weighted Scoring (score = area * circularity).
+    // Area and radius gates below use image pixels, not physical ball dimensions.
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
@@ -278,7 +281,8 @@ static DetectionResult process_bgr(
         }
     }
 
-    // 6. Kalman Filter Update
+    // 6. Both UI states use Kalman: green incorporates a fresh accepted contour;
+    // orange extrapolates because no contour passed the detection gates this frame.
     bool active = false;
     if (found_candidate) {
         g_kalman.update(best_center.x, best_center.y);

@@ -115,3 +115,37 @@ clang++ -std=c++17 -F/tmp/ballistic-opencv-macos \
 
 This verifies packed and padded BGRA frames produce matching detections and
 checks invalid row strides, null input, and frames without a ball.
+
+### Scanned frames (iPhone)
+
+Use **Scan 10s** on the Tracking screen to capture up to 600 lossless PNG frames
+with their relative processing timestamps, selected HSV profile, detections,
+and displayed trails. Capture stops after 10 seconds, on interruption, or if a
+write fails. A single outstanding disk write bounds memory; frames arriving
+while the writer is busy are skipped and counted. This diagnostic mode records
+the delivered/processed stream, not guaranteed 60 FPS or sensor timestamps.
+
+The single saved set appears as **Scanned frames** on **Debug**. Capture
+is disabled until that set is explicitly deleted. It is stored privately in
+Application Support, excluded from backup, and is not exported to Photos.
+Interrupted unfinished sets are cleaned up on the next load; finalized partial
+captures remain reviewable. No free-space precheck is performed; write errors
+are handled and reported.
+
+Swipe between numbered frames, or use the ruler: while moving it, only the
+selection number changes. The frame loads after 250 ms of inactivity or on
+release. Review uses one decoded display image plus an in-flight replacement,
+without a thumbnail cache. **Close** preserves the set; **Delete scanned frames**
+requires confirmation. Tracking overlays can be toggled, and **Color mask** shows
+pixels passing the captured HSV bounds (before morphology and shape filtering).
+
+Local checks (no device installation):
+
+```bash
+flutter test
+python3 test/run_frame_capture_native_test.py  # macOS: PNG and file lifecycle checks
+flutter build ios --release --no-codesign
+```
+
+Capture/write throughput and ruler responsiveness still need validation on a
+physical iPhone. Frame capture is currently implemented for iOS only.

@@ -3,11 +3,19 @@ import 'package:flutter/material.dart';
 import '../models/hsv_profile.dart';
 import '../models/sampled_object.dart';
 import 'calibrator_screen.dart';
-import 'activities_screen.dart';
 
 class ObjectsScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
-  const ObjectsScreen({super.key, required this.cameras});
+  final String? selectedObjectId;
+  final ValueChanged<SampledObject> onSelect;
+  final ValueChanged<List<SampledObject>> onObjectsChanged;
+  const ObjectsScreen({
+    super.key,
+    required this.cameras,
+    this.selectedObjectId,
+    required this.onSelect,
+    required this.onObjectsChanged,
+  });
   @override
   State<ObjectsScreen> createState() => _ObjectsScreenState();
 }
@@ -94,6 +102,7 @@ class _ObjectsScreenState extends State<ObjectsScreen> {
     });
     try {
       await ObjectLibrary.save(objects);
+      widget.onObjectsChanged(objects);
       if (mounted) {
         setState(() {
           _objects = objects;
@@ -154,8 +163,11 @@ class _ObjectsScreenState extends State<ObjectsScreen> {
                     itemCount: _objects.length,
                     itemBuilder: (context, index) {
                       final object = _objects[index];
+                      final selected = object.id == widget.selectedObjectId;
                       return Card(
-                        color: const Color(0xFFF1F5F9),
+                        color: selected
+                            ? const Color(0xFFDCFCE7)
+                            : const Color(0xFFF1F5F9),
                         surfaceTintColor: Colors.transparent,
                         margin: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -164,7 +176,10 @@ class _ObjectsScreenState extends State<ObjectsScreen> {
                         child: ListTile(
                           textColor: const Color(0xFF111827),
                           iconColor: const Color(0xFF334155),
-                          subtitleTextStyle: const TextStyle(color: Color(0xFF475569), fontSize: 14),
+                          subtitleTextStyle: const TextStyle(
+                            color: Color(0xFF475569),
+                            fontSize: 14,
+                          ),
                           leading: CircleAvatar(
                             backgroundColor: HSVColor.fromAHSV(
                               1,
@@ -174,16 +189,10 @@ class _ObjectsScreenState extends State<ObjectsScreen> {
                             ).toColor(),
                           ),
                           title: Text(object.name),
-                          subtitle: const Text('Choose activity'),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ActivitiesScreen(
-                                cameras: widget.cameras,
-                                object: object,
-                              ),
-                            ),
+                          subtitle: Text(
+                            selected ? '✓ Selected' : 'Choose activity',
                           ),
+                          onTap: () => widget.onSelect(object),
                           trailing: IconButton(
                             tooltip: 'Delete ${object.name}',
                             color: const Color(0xFF334155),

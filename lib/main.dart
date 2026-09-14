@@ -3,7 +3,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'native/native_cv.dart';
-import 'screens/objects_screen.dart';
+import 'screens/home_screen.dart';
 
 List<CameraDescription> _cameras = [];
 
@@ -45,7 +45,7 @@ class BallisticCvApp extends StatelessWidget {
           secondary: Colors.cyanAccent,
         ),
       ),
-      home: ObjectsScreen(cameras: cameras),
+      home: HomeScreen(cameras: cameras),
     );
   }
 }
