@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../capture/frame_capture.dart';
 import '../models/hsv_profile.dart';
 import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
@@ -32,6 +33,7 @@ class ThudScreen extends StatefulWidget {
 
 class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   CameraController? _controller;
+  final FrameCapture _capture = FrameCapture();
   bool _isProcessing = false;
   DetectionResult? _lastDetection;
 
@@ -52,8 +54,35 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _capture.addListener(_captureChanged);
+    if (Platform.isIOS) unawaited(_capture.load());
     NativeTracker.instance.resetKalmanTracker();
     _initCamera();
+  }
+
+  void _captureChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _startCapture() async {
+    final p = widget.hsvProfile;
+    await _capture.start({
+      'objectId': widget.objectId,
+      'objectName': widget.objectName,
+      'activity': 'thud',
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'hsv': [
+        p.hMed,
+        p.sMed,
+        p.vMed,
+        p.hMin,
+        p.hMax,
+        p.sMin,
+        p.sMax,
+        p.vMin,
+        p.vMax,
+      ],
+    });
   }
 
   Future<void> _initCamera() async {
@@ -245,6 +274,46 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
           }
         });
       }
+
+      if (Platform.isIOS && image.format.group == ImageFormatGroup.bgra8888) {
+        _capture.add(
+          () => {
+            'bytes': image.planes.first.bytes,
+            'width': image.width,
+            'height': image.height,
+            'stride': image.planes.first.bytesPerRow,
+            'orientation': _controller?.description.sensorOrientation ?? 90,
+            'detection': {
+              'x': detection.x,
+              'y': detection.y,
+              'vx': detection.vx,
+              'vy': detection.vy,
+              'radius': detection.radius,
+              'detected': detection.detected,
+              'predicted': detection.isPredicted,
+            },
+            'hits': _recordedHits
+                .map(
+                  (h) => {
+                    'number': h.number,
+                    'x': h.cameraPosition.dx,
+                    'y': h.cameraPosition.dy,
+                    'deflectionDegrees': h.deflectionDegrees,
+                  },
+                )
+                .toList(),
+            'trail': _trail
+                .map(
+                  (p) => {
+                    'x': p.position.dx,
+                    'y': p.position.dy,
+                    'predicted': p.isPredicted,
+                  },
+                )
+                .toList(),
+          },
+        );
+      }
     } catch (e) {
       debugPrint('Thud frame processing error: $e');
     } finally {
@@ -253,6 +322,14 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   }
 
   Future<bool> leaveActivity() async {
+    if (_capture.busy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Wait for the scan to finish before switching tabs.'),
+        ),
+      );
+      return false;
+    }
     final controller = _controller;
     _controller = null;
     await controller?.dispose();
@@ -260,6 +337,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _navigateBack() async {
+    if (_capture.busy) return;
     final controller = _controller;
     _controller = null;
     await controller?.dispose();
@@ -268,6 +346,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   }
 
   void _clearHits() {
+    if (_capture.busy) return;
     setState(() {
       _recordedHits.clear();
       _activeSplashes.clear();
@@ -288,6 +367,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _capture.removeListener(_captureChanged);
     _controller?.dispose();
     super.dispose();
   }
@@ -298,7 +378,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     final isTracking = _lastDetection != null && _lastDetection!.detected;
 
     return PopScope(
-      canPop: true,
+      canPop: !_capture.busy,
       child: Scaffold(
         appBar: AppBar(
           title: Text('${widget.objectName} · Thud (Impacts)'),
@@ -447,6 +527,91 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
+
+            // 4. 10-Second Frame Capture Floating Button
+            if (Platform.isIOS)
+              Positioned(
+                right: 18,
+                bottom: 112,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: 68,
+                      height: 68,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox.expand(
+                            child: CircularProgressIndicator(
+                              value: _capture.capturing ? _capture.progress : 0,
+                              color: Colors.redAccent,
+                              backgroundColor: Colors.white24,
+                              strokeWidth: 5,
+                            ),
+                          ),
+                          IconButton.filled(
+                            tooltip: _capture.saved == null
+                                ? 'Capture 10 seconds'
+                                : 'Delete scanned frames in Debug to capture again',
+                            onPressed:
+                                hasCamera &&
+                                    !_capture.busy &&
+                                    _capture.saved == null &&
+                                    _capture.message == null
+                                ? _startCapture
+                                : null,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              disabledBackgroundColor: Colors.grey.shade800,
+                            ),
+                            icon: const Icon(
+                              Icons.fiber_manual_record,
+                              color: Colors.white,
+                            ),
+                            iconSize: 32,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      _capture.capturing
+                          ? '${(10 * (1 - _capture.progress)).ceil()}s · ${_capture.count} frames'
+                          : _capture.saved != null
+                          ? 'Capture saved'
+                          : 'Scan 10s',
+                      style: const TextStyle(backgroundColor: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (_capture.message != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 205,
+                child: Material(
+                  color: Colors.black87,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(_capture.message!),
+                  ),
+                ),
+              ),
+
+            if (_capture.finishing) ...[
+              const ModalBarrier(dismissible: false, color: Colors.black87),
+              const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text('Finishing scanned frames…'),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
