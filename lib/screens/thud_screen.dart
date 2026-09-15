@@ -243,7 +243,6 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
             if (_trail.isNotEmpty) {
               _trail.removeAt(0);
             }
-            _recentVelocities.clear();
           }
         });
       }
