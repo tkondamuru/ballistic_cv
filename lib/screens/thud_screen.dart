@@ -189,30 +189,32 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
             }
 
             // Geometric Deflection & Impact Detection Logic
-            if (_trail.length >= 4 &&
+            // Evaluates candidate vertex point pK with a 5-point window (pK-2 .. pK+2)
+            if (_trail.length >= 5 &&
                 _cooldownFrames == 0 &&
                 !detection.isPredicted) {
-              final p0 = _trail[_trail.length - 4].position;
-              final p1 = _trail[_trail.length - 2].position; // Vertex point
-              final p2 = _trail[_trail.length - 1].position;
+              final idxK = _trail.length - 3; // Candidate vertex index
+              final pA = _trail[idxK - 2].position;
+              final pK = _trail[idxK].position; // Exact corner vertex
+              final pB = _trail[idxK + 2].position;
 
-              final v1 = Offset(p1.dx - p0.dx, p1.dy - p0.dy);
-              final v2 = Offset(p2.dx - p1.dx, p2.dy - p1.dy);
+              final vIn = Offset(pK.dx - pA.dx, pK.dy - pA.dy);
+              final vOut = Offset(pB.dx - pK.dx, pB.dy - pK.dy);
 
-              final d1 = v1.distance;
-              final d2 = v2.distance;
+              final sIn = vIn.distance;
+              final sOut = vOut.distance;
 
-              // Ensure active trajectory movement before and after the vertex
-              if (d1 >= 2.0 && d2 >= 2.0) {
-                final dot = v1.dx * v2.dx + v1.dy * v2.dy;
-                final cosTheta = (dot / (d1 * d2)).clamp(-1.0, 1.0);
+              // Require active motion into and out of candidate vertex (at least 4px over 2 frames)
+              if (sIn >= 4.0 && sOut >= 4.0) {
+                final dot = vIn.dx * vOut.dx + vIn.dy * vOut.dy;
+                final cosTheta = (dot / (sIn * sOut)).clamp(-1.0, 1.0);
                 final deflectionAngleDeg =
                     math.acos(cosTheta) * (180.0 / math.pi);
 
-                // Any trajectory deflection >= 20.0 degrees marks a hit point
-                if (deflectionAngleDeg >= 20.0) {
+                // Rebound deflection threshold >= 35.0 degrees
+                if (deflectionAngleDeg >= 35.0) {
                   final hitNum = _recordedHits.length + 1;
-                  final hitPos = p1; // Inflection vertex position
+                  final hitPos = pK; // Exact corner vertex position
 
                   final newHit = ThudHit(
                     number: hitNum,
@@ -230,9 +232,9 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                     ),
                   );
 
-                  _cooldownFrames = 8; // Debounce ~130ms
+                  _cooldownFrames = 10; // Debounce ~160ms
                   debugPrint(
-                    '[Thud] DEFLECTION POINT #$hitNum detected at (${p1.dx.toInt()}, ${p1.dy.toInt()}); '
+                    '[Thud] DEFLECTION VERTEX #$hitNum detected at (${pK.dx.toInt()}, ${pK.dy.toInt()}); '
                     'Deflection angle=${deflectionAngleDeg.toStringAsFixed(1)}°',
                   );
                 }
