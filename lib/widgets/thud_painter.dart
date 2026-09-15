@@ -45,7 +45,7 @@ class ThudPainter extends CustomPainter {
     final double frameH = detection!.frameHeight.toDouble();
 
     Offset toScreenOffset(double camX, double camY) {
-      if (sensorOrientation == 90) {
+      if (sensorOrientation == 90 && frameW > frameH) {
         final screenX = (1.0 - (camY / frameH)) * size.width;
         final screenY = (camX / frameW) * size.height;
         return Offset(screenX, screenY);
@@ -53,6 +53,18 @@ class ThudPainter extends CustomPainter {
         final screenX = (camX / frameW) * size.width;
         final screenY = (camY / frameH) * size.height;
         return Offset(screenX, screenY);
+      }
+    }
+
+    Offset toScreenVector(double vx, double vy) {
+      if (sensorOrientation == 90 && frameW > frameH) {
+        final screenVx = -vy * (size.width / frameH);
+        final screenVy = vx * (size.height / frameW);
+        return Offset(screenVx, screenVy);
+      } else {
+        final screenVx = vx * (size.width / frameW);
+        final screenVy = vy * (size.height / frameH);
+        return Offset(screenVx, screenVy);
       }
     }
 
@@ -68,7 +80,7 @@ class ThudPainter extends CustomPainter {
 
         final trailPaint = Paint()
           ..color = baseColor.withValues(alpha: (0.15 + 0.85 * t).clamp(0.0, 1.0))
-          ..strokeWidth = 2.0 + 3.5 * t
+          ..strokeWidth = 2.0 + 4.0 * t
           ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke;
 
@@ -76,24 +88,56 @@ class ThudPainter extends CustomPainter {
       }
     }
 
-    // 2. Draw Live Ball Target Reticle
+    // 2. Draw Live Ball Target Reticle (identically matched to TrackingPainter)
     if (detection != null && detection!.detected) {
       final center = toScreenOffset(detection!.x, detection!.y);
       final radius = max(18.0, detection!.radius * (size.width / frameH));
+
       final mainColor = detection!.isPredicted ? Colors.orangeAccent : const Color(0xFF00FF66);
 
-      // Target ring
+      // Outer glow
+      final glowPaint = Paint()
+        ..color = mainColor.withValues(alpha: 0.35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      canvas.drawCircle(center, radius + 4, glowPaint);
+
+      // Main target circle
       final ringPaint = Paint()
         ..color = mainColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0;
       canvas.drawCircle(center, radius, ringPaint);
 
-      // Center crosshair
+      // Velocity direction arrow
+      final vVector = toScreenVector(detection!.vx, detection!.vy);
+      final speed = vVector.distance;
+      if (speed > 2.0) {
+        final arrowEnd = center + vVector * 0.4;
+        final arrowPaint = Paint()
+          ..color = Colors.cyanAccent
+          ..strokeWidth = 2.5
+          ..strokeCap = StrokeCap.round;
+
+        canvas.drawLine(center, arrowEnd, arrowPaint);
+        canvas.drawCircle(arrowEnd, 3.5, Paint()..color = Colors.cyanAccent);
+      }
+
+      // Center crosshair dot
       final crossPaint = Paint()
         ..color = Colors.white
         ..style = PaintingStyle.fill;
       canvas.drawCircle(center, 3.0, crossPaint);
+
+      // Crosshair tick marks
+      final tickPaint = Paint()
+        ..color = mainColor
+        ..strokeWidth = 2.0;
+      canvas.drawLine(center + const Offset(-8, 0), center + const Offset(-4, 0), tickPaint);
+      canvas.drawLine(center + const Offset(4, 0), center + const Offset(8, 0), tickPaint);
+      canvas.drawLine(center + const Offset(0, -8), center + const Offset(0, -4), tickPaint);
+      canvas.drawLine(center + const Offset(0, 4), center + const Offset(0, 8), tickPaint);
     }
 
     // 3. Draw Persistent Historical Hit Markers on Screen
@@ -149,26 +193,7 @@ class ThudPainter extends CustomPainter {
         ..color = Colors.orangeAccent.withValues(alpha: (splash.remainingFrames / 18.0).clamp(0.0, 1.0))
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
-      canvas.drawCircle(sCenter, rad * 1.5, shockwavePaint2);
-
-      // Impact Callout Text Banner
-      final bannerSpan = TextSpan(
-        text: 'THUD #${splash.hitNumber}! (${splash.deflectionDegrees.toStringAsFixed(0)}°)',
-        style: const TextStyle(
-          color: Colors.yellowAccent,
-          fontSize: 16,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.8,
-          shadows: [
-            Shadow(color: Colors.black, blurRadius: 6),
-          ],
-        ),
-      );
-      final btp = TextPainter(
-        text: bannerSpan,
-        textDirection: TextDirection.ltr,
-      )..layout();
-      btp.paint(canvas, sCenter + Offset(-btp.width / 2, -rad - 24));
+      canvas.drawCircle(sCenter, rad * 0.7, shockwavePaint2);
     }
   }
 

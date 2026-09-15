@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/hsv_profile.dart';
 import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
@@ -13,19 +14,23 @@ class ThudScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
   final HsvProfile hsvProfile;
   final String objectName;
+  final String objectId;
+  final bool embedded;
 
   const ThudScreen({
     super.key,
     required this.cameras,
     required this.hsvProfile,
     this.objectName = 'Object',
+    this.objectId = '',
+    this.embedded = false,
   });
 
   @override
-  State<ThudScreen> createState() => _ThudScreenState();
+  State<ThudScreen> createState() => ThudScreenState();
 }
 
-class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
+class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   CameraController? _controller;
   bool _isProcessing = false;
   DetectionResult? _lastDetection;
@@ -62,6 +67,7 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     final controller = CameraController(
       camera,
       ResolutionPreset.low, // 360p / 480p for locked high throughput
+      fps: Platform.isIOS ? 60 : null,
       enableAudio: false,
       imageFormatGroup: Platform.isIOS
           ? ImageFormatGroup.bgra8888
@@ -70,7 +76,23 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
 
     try {
       await controller.initialize();
-      if (!mounted) return;
+      try {
+        final minZoom = await controller.getMinZoomLevel();
+        final maxZoom = await controller.getMaxZoomLevel();
+        final preferences = await SharedPreferences.getInstance();
+        final zoom = (preferences.getDouble('play_zoom') ?? 1.0).clamp(
+          minZoom,
+          maxZoom,
+        );
+        await controller.setZoomLevel(zoom);
+      } catch (e) {
+        debugPrint('Zoom setup error in ThudScreen: $e');
+      }
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
 
       setState(() {
         _controller = controller;
@@ -146,14 +168,24 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
             }
 
             // Rebound & Impact Detection Logic
-            if (_recentVelocities.length >= 4 && _cooldownFrames == 0 && !detection.isPredicted) {
+            if (_recentVelocities.length >= 4 &&
+                _cooldownFrames == 0 &&
+                !detection.isPredicted) {
               // Approach velocity (first 2 entries) vs Rebound velocity (last 2 entries)
-              final vInX = (_recentVelocities[0].dx + _recentVelocities[1].dx) / 2.0;
-              final vInY = (_recentVelocities[0].dy + _recentVelocities[1].dy) / 2.0;
+              final vInX =
+                  (_recentVelocities[0].dx + _recentVelocities[1].dx) / 2.0;
+              final vInY =
+                  (_recentVelocities[0].dy + _recentVelocities[1].dy) / 2.0;
 
               final len = _recentVelocities.length;
-              final vOutX = (_recentVelocities[len - 2].dx + _recentVelocities[len - 1].dx) / 2.0;
-              final vOutY = (_recentVelocities[len - 2].dy + _recentVelocities[len - 1].dy) / 2.0;
+              final vOutX =
+                  (_recentVelocities[len - 2].dx +
+                      _recentVelocities[len - 1].dx) /
+                  2.0;
+              final vOutY =
+                  (_recentVelocities[len - 2].dy +
+                      _recentVelocities[len - 1].dy) /
+                  2.0;
 
               final speedIn = math.sqrt(vInX * vInX + vInY * vInY);
               final speedOut = math.sqrt(vOutX * vOutX + vOutY * vOutY);
@@ -169,7 +201,9 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                   final angleInRad = math.atan2(vInY, vInX);
                   final angleOutRad = math.atan2(vOutY, vOutX);
 
-                  var diffDeg = ((angleOutRad - angleInRad) * (180.0 / math.pi)).abs() % 360.0;
+                  var diffDeg =
+                      ((angleOutRad - angleInRad) * (180.0 / math.pi)).abs() %
+                      360.0;
                   if (diffDeg > 180.0) {
                     diffDeg = 360.0 - diffDeg;
                   }
@@ -218,6 +252,13 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<bool> leaveActivity() async {
+    final controller = _controller;
+    _controller = null;
+    await controller?.dispose();
+    return true;
+  }
+
   Future<void> _navigateBack() async {
     final controller = _controller;
     _controller = null;
@@ -230,15 +271,6 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     setState(() {
       _recordedHits.clear();
       _activeSplashes.clear();
-    });
-  }
-
-  void _resetTrackerState() {
-    NativeTracker.instance.resetKalmanTracker();
-    setState(() {
-      _trail.clear();
-      _recentVelocities.clear();
-      _lastDetection = null;
     });
   }
 
@@ -263,85 +295,84 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final hasCamera = _controller != null && _controller!.value.isInitialized;
+    final isTracking = _lastDetection != null && _lastDetection!.detected;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${widget.objectName} · Thud (Impacts)'),
-        leading: BackButton(onPressed: _navigateBack),
-        actions: [
-          if (_recordedHits.isNotEmpty)
-            IconButton(
-              tooltip: 'Clear hit markers',
-              icon: const Icon(Icons.delete_sweep),
-              onPressed: _clearHits,
-            ),
-        ],
-      ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. Camera Feed Layer
-          if (hasCamera)
-            CameraPreview(_controller!)
-          else
-            const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF00FF66)),
-                  SizedBox(height: 16),
-                  Text(
-                    'Initializing Thud Stream...',
-                    style: TextStyle(color: Colors.white70, fontSize: 16),
-                  ),
-                ],
+    return PopScope(
+      canPop: true,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('${widget.objectName} · Thud (Impacts)'),
+          automaticallyImplyLeading: !widget.embedded,
+          leading: widget.embedded ? null : BackButton(onPressed: _navigateBack),
+          actions: [
+            if (_recordedHits.isNotEmpty)
+              IconButton(
+                tooltip: 'Clear hit markers',
+                icon: const Icon(Icons.delete_sweep),
+                onPressed: _clearHits,
               ),
-            ),
-
-          // 2. CustomPainter Thud Impact & Motion Layer
-          if (hasCamera && _lastDetection != null)
-            CustomPaint(
-              painter: ThudPainter(
-                detection: _lastDetection,
-                trail: _trail,
-                recordedHits: _recordedHits,
-                activeSplashes: _activeSplashes,
-                sensorOrientation: _controller!.description.sensorOrientation,
-              ),
-            ),
-
-          // 3. Top Cyberpunk HUD Bar
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Builder(
-                builder: (context) {
-                  final isTracking = _lastDetection?.detected ?? false;
-                  final isPred = _lastDetection?.isPredicted ?? false;
-                  final statusColor = isTracking
-                      ? (isPred ? Colors.orangeAccent : const Color(0xFF00FF66))
-                      : Colors.redAccent;
-
-                  return Container(
-                    margin: const EdgeInsets.only(top: 6, left: 16, right: 16),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: statusColor, width: 2.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: statusColor.withValues(alpha: 0.35),
-                          blurRadius: 12,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
+          ],
+        ),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. Camera Feed Layer
+            if (hasCamera)
+              CameraPreview(_controller!)
+            else
+              const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF00FF66)),
+                    SizedBox(height: 16),
+                    Text(
+                      'Initializing Thud Stream...',
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // FPS & Hit Count Indicator
-                        Column(
+                  ],
+                ),
+              ),
+
+            // 2. CustomPainter Thud Impact & Motion Layer
+            if (hasCamera && _lastDetection != null)
+              CustomPaint(
+                painter: ThudPainter(
+                  detection: _lastDetection,
+                  trail: _trail,
+                  recordedHits: _recordedHits,
+                  activeSplashes: _activeSplashes,
+                  sensorOrientation:
+                      _controller!.description.sensorOrientation,
+                ),
+              ),
+
+            // 3. Bottom Stats Bar (Hit & FPS Stats, Target Swatch & Coordinates)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  height: 56,
+                  margin: const EdgeInsets.only(
+                    bottom: 24,
+                    left: 16,
+                    right: 16,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Hit & FPS Readout Box
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -349,7 +380,7 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                               'HITS: ${_recordedHits.length}',
                               style: const TextStyle(
                                 color: Colors.yellowAccent,
-                                fontSize: 18,
+                                fontSize: 14,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,
                               ),
@@ -358,109 +389,66 @@ class _ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                               '${_fps.toStringAsFixed(1)} FPS',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.6),
-                                fontSize: 11,
+                                fontSize: 10,
                               ),
                             ),
                           ],
                         ),
+                      ),
+                      const SizedBox(width: 8),
 
-                        // Status Badge
-                        Column(
+                      // Target Color Swatch & Center Coordinate Readout
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            const Text(
-                              'THUD ENGINE',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
+                            Tooltip(
+                              message: 'Sampled target color',
+                              child: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white70),
+                                  color: HSVColor.fromAHSV(
+                                    1,
+                                    widget.hsvProfile.hMed * 2.0,
+                                    widget.hsvProfile.sMed / 255,
+                                    widget.hsvProfile.vMed / 255,
+                                  ).toColor(),
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(width: 8),
                             Text(
                               isTracking
-                                  ? (isPred ? '◐ PREDICTING' : '● ACTIVE THUD')
-                                  : '○ SEARCHING',
-                              style: TextStyle(
-                                color: statusColor,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.8,
+                                  ? '(${_lastDetection!.x.toInt()}, ${_lastDetection!.y.toInt()})'
+                                  : '--',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                fontFamily: 'monospace',
                               ),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-
-          // 4. Bottom Controls
-          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Back to Activities Button
-                    FloatingActionButton.extended(
-                      heroTag: 'thud_back',
-                      onPressed: _navigateBack,
-                      backgroundColor: Colors.black.withValues(alpha: 0.85),
-                      foregroundColor: const Color(0xFF00FF66),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(color: Color(0xFF00FF66), width: 1.5),
                       ),
-                      icon: const Icon(Icons.arrow_back, size: 20),
-                      label: const Text(
-                        'ACTIVITIES',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-
-                    // Clear Hits Button
-                    if (_recordedHits.isNotEmpty)
-                      FloatingActionButton.extended(
-                        heroTag: 'thud_clear',
-                        onPressed: _clearHits,
-                        backgroundColor: Colors.black.withValues(alpha: 0.85),
-                        foregroundColor: Colors.yellowAccent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: const BorderSide(color: Colors.yellowAccent, width: 1.5),
-                        ),
-                        icon: const Icon(Icons.cleaning_services, size: 18),
-                        label: const Text(
-                          'CLEAR HITS',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-
-                    // Refresh / Reset Tracker State
-                    FloatingActionButton(
-                      heroTag: 'thud_reset',
-                      onPressed: _resetTrackerState,
-                      backgroundColor: Colors.black.withValues(alpha: 0.85),
-                      foregroundColor: Colors.white70,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(color: Colors.white24, width: 1.5),
-                      ),
-                      child: const Icon(Icons.refresh, size: 22),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

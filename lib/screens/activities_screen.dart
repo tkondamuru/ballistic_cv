@@ -1,19 +1,21 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import '../models/sampled_object.dart';
-import 'thud_screen.dart';
 
 class ActivitiesScreen extends StatelessWidget {
   final List<CameraDescription> cameras;
   final SampledObject object;
   final VoidCallback onTrack;
-  final bool selected;
+  final VoidCallback onThud;
+  final String? selectedActivity;
+
   const ActivitiesScreen({
     super.key,
     required this.cameras,
     required this.object,
     required this.onTrack,
-    this.selected = false,
+    required this.onThud,
+    this.selectedActivity,
   });
 
   @override
@@ -24,8 +26,11 @@ class ActivitiesScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 1. Tracking Activity Card
           Card(
-            color: selected ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+            color: selectedActivity == 'tracking'
+                ? const Color(0xFFDCFCE7)
+                : const Color(0xFFF1F5F9),
             surfaceTintColor: Colors.transparent,
             child: ListTile(
               textColor: const Color(0xFF111827),
@@ -40,8 +45,10 @@ class ActivitiesScreen extends StatelessWidget {
                 'Follow your object and draw its motion trail.',
               ),
               trailing: Icon(
-                selected ? Icons.check_circle : Icons.play_arrow,
-                semanticLabel: selected
+                selectedActivity == 'tracking'
+                    ? Icons.check_circle
+                    : Icons.play_arrow,
+                semanticLabel: selectedActivity == 'tracking'
                     ? 'Selected activity'
                     : 'Select activity',
               ),
@@ -52,28 +59,31 @@ class ActivitiesScreen extends StatelessWidget {
 
           // 2. Thud (Impact & Rebound) Activity Card
           Card(
-            color: const Color(0xFFF1F5F9),
+            color: selectedActivity == 'thud'
+                ? const Color(0xFFDCFCE7)
+                : const Color(0xFFF1F5F9),
             surfaceTintColor: Colors.transparent,
             child: ListTile(
               textColor: const Color(0xFF111827),
               iconColor: const Color(0xFF334155),
-              subtitleTextStyle: const TextStyle(color: Color(0xFF475569), fontSize: 14),
+              subtitleTextStyle: const TextStyle(
+                color: Color(0xFF475569),
+                fontSize: 14,
+              ),
               leading: const Icon(Icons.sports_baseball),
               title: const Text('Thud'),
               subtitle: const Text(
                 'Detect physical wall/desk impacts, shockwaves, and deflection angles.',
               ),
-              trailing: const Icon(Icons.play_arrow),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ThudScreen(
-                    cameras: cameras,
-                    hsvProfile: object.profile,
-                    objectName: object.name,
-                  ),
-                ),
+              trailing: Icon(
+                selectedActivity == 'thud'
+                    ? Icons.check_circle
+                    : Icons.play_arrow,
+                semanticLabel: selectedActivity == 'thud'
+                    ? 'Selected activity'
+                    : 'Select activity',
               ),
+              onTap: onThud,
             ),
           ),
         ],

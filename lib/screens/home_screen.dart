@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/sampled_object.dart';
 import 'activities_screen.dart';
 import 'objects_screen.dart';
+import 'thud_screen.dart';
 import 'tracker_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -34,15 +35,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final preferences = await SharedPreferences.getInstance();
       final objects = await ObjectLibrary.load();
       final selectedId = preferences.getString('selected_object_id');
-      // Resolve against today's library so a stale/deleted selection cannot
-      // launch Play with an object that no longer exists.
       final matches = objects.where((object) => object.id == selectedId);
       if (!mounted) return;
       _preferences = preferences;
       _object = matches.isEmpty ? null : matches.first;
-      _activity = preferences.getString('selected_activity') == 'tracking'
-          ? 'tracking'
-          : null;
+      final savedAct = preferences.getString('selected_activity');
+      _activity = (savedAct == 'tracking' || savedAct == 'thud') ? savedAct : null;
       _tab = _object != null && _activity != null ? 2 : 0;
     } catch (error) {
       debugPrint('Could not restore selection: $error');
@@ -77,13 +75,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   final _tracker = GlobalKey<TrackerScreenState>();
+  final _thud = GlobalKey<ThudScreenState>();
 
   Future<void> _selectTab(int tab) async {
     if (_switching || tab == _tab) return;
     _switching = true;
     try {
-      if (_tab == 2 && _tracker.currentState != null) {
-        if (!await _tracker.currentState!.leaveActivity()) return;
+      if (_tab == 2) {
+        if (_tracker.currentState != null) {
+          if (!await _tracker.currentState!.leaveActivity()) return;
+        }
+        if (_thud.currentState != null) {
+          if (!await _thud.currentState!.leaveActivity()) return;
+        }
       }
       if (mounted) setState(() => _tab = tab);
     } finally {
@@ -136,9 +140,14 @@ class _HomeScreenState extends State<HomeScreen> {
       return ActivitiesScreen(
         cameras: widget.cameras,
         object: object,
-        selected: _activity == 'tracking',
+        selectedActivity: _activity,
         onTrack: () {
           setState(() => _activity = 'tracking');
+          _saveSelection();
+          _selectTab(2);
+        },
+        onThud: () {
+          setState(() => _activity = 'thud');
           _saveSelection();
           _selectTab(2);
         },
@@ -150,6 +159,16 @@ class _HomeScreenState extends State<HomeScreen> {
           onPressed: () => _selectTab(1),
           child: const Text('Choose activity'),
         ),
+      );
+    }
+    if (_activity == 'thud') {
+      return ThudScreen(
+        key: _thud,
+        cameras: widget.cameras,
+        hsvProfile: object.profile,
+        objectName: object.name,
+        objectId: object.id,
+        embedded: true,
       );
     }
     return TrackerScreen(
