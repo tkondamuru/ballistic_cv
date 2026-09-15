@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../capture/frame_capture.dart';
+import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
+import '../widgets/thud_painter.dart';
 import '../widgets/tracking_painter.dart';
 
 class FrameReviewScreen extends StatefulWidget {
@@ -153,6 +155,23 @@ class _FrameReviewScreenState extends State<FrameReviewScreen> {
           ),
         )
         .toList();
+    final rawHits = f['hits'] as List?;
+    final hits = (rawHits ?? const [])
+        .map(
+          (h) => ThudHit(
+            number: (h['number'] as num).toInt(),
+            cameraPosition: Offset(
+              (h['x'] as num).toDouble(),
+              (h['y'] as num).toDouble(),
+            ),
+            deflectionDegrees: (h['deflectionDegrees'] as num).toDouble(),
+            timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        )
+        .toList();
+    final activity = widget.capture.data['activity'] as String?;
+    final isThud = activity == 'thud' || hits.isNotEmpty;
+
     final turns = _image!.width > _image!.height
         ? (f['orientation'] as int) ~/ 90 % 4
         : 0;
@@ -171,11 +190,19 @@ class _FrameReviewScreenState extends State<FrameReviewScreen> {
               ),
               if (_overlay)
                 CustomPaint(
-                  painter: TrackingPainter(
-                    detection: detection,
-                    trail: trail,
-                    sensorOrientation: 0,
-                  ),
+                  painter: isThud
+                      ? ThudPainter(
+                          detection: detection,
+                          trail: trail,
+                          recordedHits: hits,
+                          activeSplashes: const [],
+                          sensorOrientation: 0,
+                        )
+                      : TrackingPainter(
+                          detection: detection,
+                          trail: trail,
+                          sensorOrientation: 0,
+                        ),
                 ),
             ],
           ),
