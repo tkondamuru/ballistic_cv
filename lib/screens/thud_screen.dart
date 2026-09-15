@@ -41,7 +41,6 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   final List<TrackingPoint> _trail = [];
   final List<ThudHit> _recordedHits = [];
   final List<ActiveSplash> _activeSplashes = [];
-  final List<Offset> _recentVelocities = [];
 
   int _cooldownFrames = 0;
 
@@ -189,61 +188,36 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
               _trail.removeAt(0);
             }
 
-            // Track recent velocity vectors for rebound / impact detection
-            final currentVel = Offset(detection.vx, detection.vy);
-            _recentVelocities.add(currentVel);
-            if (_recentVelocities.length > 6) {
-              _recentVelocities.removeAt(0);
-            }
-
-            // Rebound & Impact Detection Logic
-            if (_recentVelocities.length >= 4 &&
+            // Geometric Deflection & Impact Detection Logic
+            if (_trail.length >= 4 &&
                 _cooldownFrames == 0 &&
                 !detection.isPredicted) {
-              // Approach velocity (first 2 entries) vs Rebound velocity (last 2 entries)
-              final vInX =
-                  (_recentVelocities[0].dx + _recentVelocities[1].dx) / 2.0;
-              final vInY =
-                  (_recentVelocities[0].dy + _recentVelocities[1].dy) / 2.0;
+              final p0 = _trail[_trail.length - 4].position;
+              final p1 = _trail[_trail.length - 2].position; // Vertex point
+              final p2 = _trail[_trail.length - 1].position;
 
-              final len = _recentVelocities.length;
-              final vOutX =
-                  (_recentVelocities[len - 2].dx +
-                      _recentVelocities[len - 1].dx) /
-                  2.0;
-              final vOutY =
-                  (_recentVelocities[len - 2].dy +
-                      _recentVelocities[len - 1].dy) /
-                  2.0;
+              final v1 = Offset(p1.dx - p0.dx, p1.dy - p0.dy);
+              final v2 = Offset(p2.dx - p1.dx, p2.dy - p1.dy);
 
-              final speedIn = math.sqrt(vInX * vInX + vInY * vInY);
-              final speedOut = math.sqrt(vOutX * vOutX + vOutY * vOutY);
+              final d1 = v1.distance;
+              final d2 = v2.distance;
 
-              // Require active approach flight (speedIn >= 7.0 px/f) and active rebound (speedOut >= 3.5 px/f)
-              if (speedIn >= 7.0 && speedOut >= 3.5) {
-                final dotProd = (vInX * vOutX + vInY * vOutY);
-                final cosTheta = dotProd / (speedIn * speedOut);
+              // Ensure active trajectory movement before and after the vertex
+              if (d1 >= 2.0 && d2 >= 2.0) {
+                final dot = v1.dx * v2.dx + v1.dy * v2.dy;
+                final cosTheta = (dot / (d1 * d2)).clamp(-1.0, 1.0);
+                final deflectionAngleDeg =
+                    math.acos(cosTheta) * (180.0 / math.pi);
 
-                // Rebound inflection threshold: cos(theta) < 0.45 (direction reversal > 63 degrees)
-                if (cosTheta < 0.45) {
-                  // Calculate approach & rebound angles
-                  final angleInRad = math.atan2(vInY, vInX);
-                  final angleOutRad = math.atan2(vOutY, vOutX);
-
-                  var diffDeg =
-                      ((angleOutRad - angleInRad) * (180.0 / math.pi)).abs() %
-                      360.0;
-                  if (diffDeg > 180.0) {
-                    diffDeg = 360.0 - diffDeg;
-                  }
-
+                // Any trajectory deflection >= 20.0 degrees marks a hit point
+                if (deflectionAngleDeg >= 20.0) {
                   final hitNum = _recordedHits.length + 1;
-                  final hitPos = Offset(detection.x, detection.y);
+                  final hitPos = p1; // Inflection vertex position
 
                   final newHit = ThudHit(
                     number: hitNum,
                     cameraPosition: hitPos,
-                    deflectionDegrees: diffDeg,
+                    deflectionDegrees: deflectionAngleDeg,
                     timestamp: now,
                   );
 
@@ -252,15 +226,14 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                     ActiveSplash(
                       hitNumber: hitNum,
                       cameraPosition: hitPos,
-                      deflectionDegrees: diffDeg,
+                      deflectionDegrees: deflectionAngleDeg,
                     ),
                   );
 
-                  _cooldownFrames = 14; // Debounce ~250ms
-                  _recentVelocities.clear();
+                  _cooldownFrames = 8; // Debounce ~130ms
                   debugPrint(
-                    '[Thud] PHYSICAL IMPACT #$hitNum detected at (${detection.x.toInt()}, ${detection.y.toInt()}); '
-                    'Deflection angle=${diffDeg.toStringAsFixed(1)}°, cosTheta=${cosTheta.toStringAsFixed(2)}',
+                    '[Thud] DEFLECTION POINT #$hitNum detected at (${p1.dx.toInt()}, ${p1.dy.toInt()}); '
+                    'Deflection angle=${deflectionAngleDeg.toStringAsFixed(1)}°',
                   );
                 }
               }
