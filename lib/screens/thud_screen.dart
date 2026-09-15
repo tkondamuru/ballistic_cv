@@ -188,14 +188,13 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
               _trail.removeAt(0);
             }
 
-            // Geometric Deflection & Impact Detection Logic
-            // Evaluates candidate vertex point pK with a 5-point window (pK-2 .. pK+2)
+            // Geometric Deflection & Impact Detection Logic (Real-Time Peak Detection)
             if (_trail.length >= 5 &&
                 _cooldownFrames == 0 &&
                 !detection.isPredicted) {
               final idxK = _trail.length - 3; // Candidate vertex index
               final pA = _trail[idxK - 2].position;
-              final pK = _trail[idxK].position; // Exact corner vertex
+              final pK = _trail[idxK].position; // Candidate corner vertex
               final pB = _trail[idxK + 2].position;
 
               final vIn = Offset(pK.dx - pA.dx, pK.dy - pA.dy);
@@ -204,15 +203,30 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
               final sIn = vIn.distance;
               final sOut = vOut.distance;
 
-              // Require active motion into and out of candidate vertex (at least 4px over 2 frames)
-              if (sIn >= 4.0 && sOut >= 4.0) {
+              // Require active motion into and out of candidate vertex (at least 3.5px over 2 frames)
+              if (sIn >= 3.5 && sOut >= 3.5) {
                 final dot = vIn.dx * vOut.dx + vIn.dy * vOut.dy;
                 final cosTheta = (dot / (sIn * sOut)).clamp(-1.0, 1.0);
                 final deflectionAngleDeg =
                     math.acos(cosTheta) * (180.0 / math.pi);
 
-                // Rebound deflection threshold >= 35.0 degrees
-                if (deflectionAngleDeg >= 35.0) {
+                // Compare with previous adjacent candidate angle to confirm local peak curvature
+                final pA0 = _trail[idxK - 3].position;
+                final pK0 = _trail[idxK - 1].position;
+                final pB0 = _trail[idxK + 1].position;
+                final vIn0 = Offset(pK0.dx - pA0.dx, pK0.dy - pA0.dy);
+                final vOut0 = Offset(pB0.dx - pK0.dx, pB0.dy - pK0.dy);
+                final sIn0 = vIn0.distance;
+                final sOut0 = vOut0.distance;
+                double anglePrev = 0.0;
+                if (sIn0 >= 3.5 && sOut0 >= 3.5) {
+                  final dot0 = vIn0.dx * vOut0.dx + vIn0.dy * vOut0.dy;
+                  final cosTheta0 = (dot0 / (sIn0 * sOut0)).clamp(-1.0, 1.0);
+                  anglePrev = math.acos(cosTheta0) * (180.0 / math.pi);
+                }
+
+                // Mark real-time as soon as deflection angle >= 30° and reaches local peak
+                if (deflectionAngleDeg >= 30.0 && deflectionAngleDeg >= anglePrev) {
                   final hitNum = _recordedHits.length + 1;
                   final hitPos = pK; // Exact corner vertex position
 
@@ -234,7 +248,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
 
                   _cooldownFrames = 10; // Debounce ~160ms
                   debugPrint(
-                    '[Thud] DEFLECTION VERTEX #$hitNum detected at (${pK.dx.toInt()}, ${pK.dy.toInt()}); '
+                    '[Thud] REALTIME DEFLECTION VERTEX #$hitNum detected at (${pK.dx.toInt()}, ${pK.dy.toInt()}); '
                     'Deflection angle=${deflectionAngleDeg.toStringAsFixed(1)}°',
                   );
                 }

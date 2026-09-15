@@ -20,11 +20,29 @@ class ActiveSplash {
   });
 }
 
+/// Orders 4 detected ArUco corner points into canonical [TL, TR, BR, BL] order
+/// by sorting their (x, y) coordinates regardless of detection input order.
+List<Offset> orderArUcoCorners(List<Offset> points) {
+  if (points.length != 4) return points;
+  final sorted = List<Offset>.from(points);
+  sorted.sort((a, b) => (a.dx + a.dy).compareTo(b.dx + b.dy));
+  final tl = sorted[0];
+  final br = sorted[3];
+
+  final remaining = [sorted[1], sorted[2]];
+  remaining.sort((a, b) => (a.dy - a.dx).compareTo(b.dy - b.dx));
+  final tr = remaining[0];
+  final bl = remaining[1];
+
+  return [tl, tr, br, bl];
+}
+
 class ThudPainter extends CustomPainter {
   final DetectionResult? detection;
   final List<TrackingPoint> trail;
   final List<ThudHit> recordedHits;
   final List<ActiveSplash> activeSplashes;
+  final List<Offset>? arucoCorners;
   final int sensorOrientation;
 
   ThudPainter({
@@ -32,6 +50,7 @@ class ThudPainter extends CustomPainter {
     required this.trail,
     required this.recordedHits,
     required this.activeSplashes,
+    this.arucoCorners,
     this.sensorOrientation = 90,
   });
 
@@ -194,6 +213,31 @@ class ThudPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
       canvas.drawCircle(sCenter, rad * 0.7, shockwavePaint2);
+    }
+
+    // 5. Draw ArUco Ordered Boundary Quad Overlay (if ArUco markers detected)
+    if (arucoCorners != null && arucoCorners!.length == 4) {
+      final ordered = orderArUcoCorners(arucoCorners!);
+      final screenQuad = ordered.map((c) => toScreenOffset(c.dx, c.dy)).toList();
+
+      final quadPath = Path()
+        ..moveTo(screenQuad[0].dx, screenQuad[0].dy)
+        ..lineTo(screenQuad[1].dx, screenQuad[1].dy)
+        ..lineTo(screenQuad[2].dx, screenQuad[2].dy)
+        ..lineTo(screenQuad[3].dx, screenQuad[3].dy)
+        ..close();
+
+      final quadPaint = Paint()
+        ..color = Colors.cyanAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5;
+
+      final fillPaint = Paint()
+        ..color = Colors.cyanAccent.withValues(alpha: 0.12)
+        ..style = PaintingStyle.fill;
+
+      canvas.drawPath(quadPath, fillPaint);
+      canvas.drawPath(quadPath, quadPaint);
     }
   }
 
