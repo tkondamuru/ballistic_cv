@@ -174,19 +174,12 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _performArucoScan(DetectionResult detection) {
+  void _performArucoScan(CameraImage image) {
     _scanArucoRequested = false;
-    final w = detection.frameWidth > 0 ? detection.frameWidth.toDouble() : 480.0;
-    final h = detection.frameHeight > 0 ? detection.frameHeight.toDouble() : 360.0;
 
-    // Evaluate frame quadrilaterals / markers for ArUco boundary corners
-    // When 4 markers are found in the camera frame, order corners by (x,y)
-    final detectedCorners = [
-      Offset(w * 0.15, h * 0.15),
-      Offset(w * 0.85, h * 0.15),
-      Offset(w * 0.85, h * 0.85),
-      Offset(w * 0.15, h * 0.85),
-    ];
+    // Detect real ArUco / square quad marker centroids from OpenCV
+    final detectedCorners =
+        NativeTracker.instance.detectArucoCornersFromCameraImage(image);
 
     if (detectedCorners.length == 4) {
       final ordered = orderArUcoCorners(detectedCorners);
@@ -204,6 +197,9 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
       );
     } else {
       final count = detectedCorners.length;
+      setState(() {
+        _arucoBoundary = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -232,7 +228,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
       );
 
       if (_scanArucoRequested) {
-        _performArucoScan(detection);
+        _performArucoScan(image);
       }
 
       // FPS Calculation

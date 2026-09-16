@@ -509,4 +509,148 @@ CalibratedHsvResult sample_hsv_color_yuv420(
     return compute_hsv_calibration(bgr, reticle_x, reticle_y, reticle_radius);
 }
 
+static int detect_aruco_corners_bgr(
+    const cv::Mat& bgr,
+    float* out_x,
+    float* out_y
+) {
+    if (bgr.empty() || !out_x || !out_y) return 0;
+
+    cv::Mat gray;
+    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+
+    cv::Mat thresh;
+    cv::adaptiveThreshold(gray, thresh, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY_INV, 11, 2);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(thresh, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+    double img_area = static_cast<double>(bgr.cols * bgr.rows);
+    double min_area = std::max(60.0, img_area * 0.0005);
+    double max_area = img_area * 0.25;
+
+    struct Candidate {
+        cv::Point2f center;
+        double area;
+    };
+    std::vector<Candidate> candidates;
+
+    for (const auto& c : contours) {
+        double area = cv::contourArea(c);
+        if (area < min_area || area > max_area) continue;
+
+        double perimeter = cv::arcLength(c, true);
+        if (perimeter <= 0) continue;
+
+        std::vector<cv::Point> approx;
+        cv::approxPolyDP(c, approx, 0.04 * perimeter, true);
+
+        if (approx.size() == 4 && cv::isContourConvex(approx)) {
+            cv::Rect rect = cv::boundingRect(approx);
+            double aspect = static_cast<double>(rect.width) / std::max(1, rect.height);
+            if (aspect >= 0.60 && aspect <= 1.65) {
+                cv::Moments m = cv::moments(approx);
+                if (m.m00 > 0) {
+                    cv::Point2f center(static_cast<float>(m.m10 / m.m00), static_cast<float>(m.m01 / m.m00));
+                    candidates.push_back({center, area});
+                }
+            }
+        }
+    }
+
+    if (candidates.empty()) return 0;
+
+    std::vector<cv::Point2f> unique_centers;
+    for (const auto& cand : candidates) {
+        bool is_dup = false;
+        for (const auto& existing : unique_centers) {
+            float dx = cand.center.x - existing.x;
+            float dy = cand.center.y - existing.y;
+            if (std::sqrt(dx * dx + dy * dy) < 25.0f) {
+                is_dup = true;
+                break;
+            }
+        }
+        if (!is_dup) {
+            unique_centers.push_back(cand.center);
+        }
+    }
+
+    int count = std::min(4, static_cast<int>(unique_centers.size()));
+    for (int i = 0; i < count; ++i) {
+        out_x[i] = unique_centers[i].x;
+        out_y[i] = unique_centers[i].y;
+    }
+
+    return count;
+}
+
+int detect_aruco_corners_rgba(
+    const uint8_t* rgba_bytes,
+    int width,
+    int height,
+    int is_bgra,
+    int row_stride,
+    float* out_x,
+    float* out_y
+) {
+    if (!rgba_bytes || width <= 0 || height <= 0 || row_stride < static_cast<int64_t>(width) * 4) {
+        return 0;
+    }
+
+    cv::Mat img(height, width, CV_8UC4, const_cast<uint8_t*>(rgba_bytes), row_stride);
+    cv::Mat bgr;
+    if (is_bgra) {
+        cv::cvtColor(img, bgr, cv::COLOR_BGRA2BGR);
+    } else {
+        cv::cvtColor(img, bgr, cv::COLOR_RGBA2BGR);
+    }
+
+    return detect_aruco_corners_bgr(bgr, out_x, out_y);
+}
+
+int detect_aruco_corners_yuv420(
+    const uint8_t* y_plane,
+    const uint8_t* u_plane,
+    const uint8_t* v_plane,
+    int width,
+    int height,
+    int y_row_stride,
+    int uv_row_stride,
+    int uv_pixel_stride,
+    float* out_x,
+    float* out_y
+) {
+    if (!y_plane || !u_plane || !v_plane || width <= 0 || height <= 0) {
+        return 0;
+    }
+
+    cv::Mat yuv_nv21(height + height / 2, width, CV_8UC1);
+    uint8_t* nv21_data = yuv_nv21.data;
+
+    for (int r = 0; r < height; ++r) {
+        std::memcpy(nv21_data + (r * width), y_plane + (r * y_row_stride), width);
+    }
+
+    uint8_t* uv_dest = nv21_data + (width * height);
+    int uv_height = height / 2;
+    int uv_width = width / 2;
+
+    for (int r = 0; r < uv_height; ++r) {
+        const uint8_t* u_row = u_plane + (r * uv_row_stride);
+        const uint8_t* v_row = v_plane + (r * uv_row_stride);
+        uint8_t* dest_row = uv_dest + (r * width);
+
+        for (int c = 0; c < uv_width; ++c) {
+            dest_row[2 * c]     = v_row[c * uv_pixel_stride];
+            dest_row[2 * c + 1] = u_row[c * uv_pixel_stride];
+        }
+    }
+
+    cv::Mat bgr;
+    cv::cvtColor(yuv_nv21, bgr, cv::COLOR_YUV2BGR_NV21);
+
+    return detect_aruco_corners_bgr(bgr, out_x, out_y);
+}
+
 } // extern "C"
