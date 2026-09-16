@@ -92,7 +92,7 @@ CalibratedHsvResult sample_hsv_color_yuv420(
     int reticle_radius
 );
 
-int detect_aruco_corners_rgba(
+int detect_colored_corners_rgba(
     const uint8_t* rgba_bytes,
     int width,
     int height,
@@ -102,7 +102,7 @@ int detect_aruco_corners_rgba(
     float* out_y
 );
 
-int detect_aruco_corners_yuv420(
+int detect_colored_corners_yuv420(
     const uint8_t* y_plane,
     const uint8_t* u_plane,
     const uint8_t* v_plane,

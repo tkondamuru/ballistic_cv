@@ -243,7 +243,7 @@ typedef _SampleHsvYuv420Dart = CalibratedHsvResultStruct Function(
   int reticleRadius,
 );
 
-typedef _DetectArucoCornersRgbaC = Int32 Function(
+typedef _DetectColoredCornersRgbaC = Int32 Function(
   Pointer<Uint8> rgbaBytes,
   Int32 width,
   Int32 height,
@@ -253,7 +253,7 @@ typedef _DetectArucoCornersRgbaC = Int32 Function(
   Pointer<Float> outY,
 );
 
-typedef _DetectArucoCornersRgbaDart = int Function(
+typedef _DetectColoredCornersRgbaDart = int Function(
   Pointer<Uint8> rgbaBytes,
   int width,
   int height,
@@ -263,7 +263,7 @@ typedef _DetectArucoCornersRgbaDart = int Function(
   Pointer<Float> outY,
 );
 
-typedef _DetectArucoCornersYuv420C = Int32 Function(
+typedef _DetectColoredCornersYuv420C = Int32 Function(
   Pointer<Uint8> yPlane,
   Pointer<Uint8> uPlane,
   Pointer<Uint8> vPlane,
@@ -276,7 +276,7 @@ typedef _DetectArucoCornersYuv420C = Int32 Function(
   Pointer<Float> outY,
 );
 
-typedef _DetectArucoCornersYuv420Dart = int Function(
+typedef _DetectColoredCornersYuv420Dart = int Function(
   Pointer<Uint8> yPlane,
   Pointer<Uint8> uPlane,
   Pointer<Uint8> vPlane,
@@ -299,8 +299,8 @@ class NativeTracker {
   late final _DetectBallRgbaDart _detectBallRgba;
   late final _SampleHsvRgbaDart _sampleHsvRgba;
   late final _SampleHsvYuv420Dart _sampleHsvYuv420;
-  late final _DetectArucoCornersRgbaDart _detectArucoRgba;
-  late final _DetectArucoCornersYuv420Dart _detectArucoYuv420;
+  late final _DetectColoredCornersRgbaDart _detectColoredCornersRgba;
+  late final _DetectColoredCornersYuv420Dart _detectColoredCornersYuv420;
 
   // Reusable native buffers for zero GC churn
   Pointer<Uint8>? _yBuffer;
@@ -356,13 +356,13 @@ class NativeTracker {
         .lookup<NativeFunction<_SampleHsvYuv420C>>('sample_hsv_color_yuv420')
         .asFunction<_SampleHsvYuv420Dart>();
 
-    _detectArucoRgba = _lib
-        .lookup<NativeFunction<_DetectArucoCornersRgbaC>>('detect_aruco_corners_rgba')
-        .asFunction<_DetectArucoCornersRgbaDart>();
+    _detectColoredCornersRgba = _lib
+        .lookup<NativeFunction<_DetectColoredCornersRgbaC>>('detect_colored_corners_rgba')
+        .asFunction<_DetectColoredCornersRgbaDart>();
 
-    _detectArucoYuv420 = _lib
-        .lookup<NativeFunction<_DetectArucoCornersYuv420C>>('detect_aruco_corners_yuv420')
-        .asFunction<_DetectArucoCornersYuv420Dart>();
+    _detectColoredCornersYuv420 = _lib
+        .lookup<NativeFunction<_DetectColoredCornersYuv420C>>('detect_colored_corners_yuv420')
+        .asFunction<_DetectColoredCornersYuv420Dart>();
 
     _initialized = true;
   }
@@ -601,7 +601,7 @@ class NativeTracker {
       _uBuffer!.asTypedList(uPlane.bytes.length).setAll(0, uPlane.bytes);
       _vBuffer!.asTypedList(vPlane.bytes.length).setAll(0, vPlane.bytes);
 
-      count = _detectArucoYuv420(
+      count = _detectColoredCornersYuv420(
         _yBuffer!,
         _uBuffer!,
         _vBuffer!,
@@ -623,7 +623,7 @@ class NativeTracker {
       _rgbaBuffer!.asTypedList(plane.bytes.length).setAll(0, plane.bytes);
 
       final isBgra = image.format.group == ImageFormatGroup.bgra8888 ? 1 : 0;
-      count = _detectArucoRgba(
+      count = _detectColoredCornersRgba(
         _rgbaBuffer!,
         image.width,
         image.height,

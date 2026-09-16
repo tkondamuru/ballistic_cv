@@ -509,25 +509,94 @@ CalibratedHsvResult sample_hsv_color_yuv420(
     return compute_hsv_calibration(bgr, reticle_x, reticle_y, reticle_radius);
 }
 
-static int detect_aruco_corners_bgr(
+static int detect_colored_corners_bgr(
     const cv::Mat& bgr,
     float* out_x,
     float* out_y
 ) {
     if (bgr.empty() || !out_x || !out_y) return 0;
 
-    cv::Mat gray;
-    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    cv::Mat hsv;
+    cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
 
-    cv::Mat thresh;
-    cv::adaptiveThreshold(gray, thresh, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY_INV, 11, 2);
+    // Dynamic 4-color corner detection:
+    // Index 0: Red (TL)
+    // Index 1: Green (TR)
+    // Index 2: Blue (BR)
+    // Index 3: Yellow (BL)
+    struct ColorSpec {
+        int h_min1, h_max1;
+        int h_min2, h_max2;
+        int s_min, v_min;
+    };
+
+    ColorSpec specs[4] = {
+        {170, 179, 0, 10, 80, 80},   // Red (TL)
+        {35, 85, -1, -1, 80, 80},    // Green (TR)
+        {95, 135, -1, -1, 80, 80},   // Blue (BR)
+        {15, 34, -1, -1, 80, 80}     // Yellow (BL)
+    };
+
+    cv::Point2f corner_pts[4];
+    int found_color_count = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        cv::Mat mask1, mask2, mask;
+        cv::inRange(hsv, cv::Scalar(specs[i].h_min1, specs[i].s_min, specs[i].v_min),
+                         cv::Scalar(specs[i].h_max1, 255, 255), mask1);
+        if (specs[i].h_min2 >= 0) {
+            cv::inRange(hsv, cv::Scalar(specs[i].h_min2, specs[i].s_min, specs[i].v_min),
+                             cv::Scalar(specs[i].h_max2, 255, 255), mask2);
+            cv::bitwise_or(mask1, mask2, mask);
+        } else {
+            mask = mask1;
+        }
+
+        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+        cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
+
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+        double best_area = 0;
+        cv::Point2f best_center(0, 0);
+
+        for (const auto& c : contours) {
+            double area = cv::contourArea(c);
+            if (area >= 15.0 && area <= static_cast<double>(bgr.cols * bgr.rows) * 0.20) {
+                if (area > best_area) {
+                    cv::Moments m = cv::moments(c);
+                    if (m.m00 > 0) {
+                        best_area = area;
+                        best_center = cv::Point2f(static_cast<float>(m.m10 / m.m00), static_cast<float>(m.m01 / m.m00));
+                    }
+                }
+            }
+        }
+
+        if (best_area > 0) {
+            corner_pts[i] = best_center;
+            found_color_count++;
+        }
+    }
+
+    // Case 1: All 4 distinct corner colors found (Red, Green, Blue, Yellow)
+    if (found_color_count == 4) {
+        for (int i = 0; i < 4; ++i) {
+            out_x[i] = corner_pts[i].x;
+            out_y[i] = corner_pts[i].y;
+        }
+        return 4;
+    }
+
+    // Case 2: Fallback — search for 4 saturated color dots of ANY single color (e.g. 4 Cyan / 4 Lime squares)
+    cv::Mat saturated_mask;
+    cv::inRange(hsv, cv::Scalar(0, 70, 70), cv::Scalar(179, 255, 255), saturated_mask);
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+    cv::morphologyEx(saturated_mask, saturated_mask, cv::MORPH_OPEN, kernel);
 
     std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(thresh, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-
-    double img_area = static_cast<double>(bgr.cols * bgr.rows);
-    double min_area = std::max(60.0, img_area * 0.0005);
-    double max_area = img_area * 0.25;
+    cv::findContours(saturated_mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     struct Candidate {
         cv::Point2f center;
@@ -537,41 +606,30 @@ static int detect_aruco_corners_bgr(
 
     for (const auto& c : contours) {
         double area = cv::contourArea(c);
-        if (area < min_area || area > max_area) continue;
-
-        double perimeter = cv::arcLength(c, true);
-        if (perimeter <= 0) continue;
-
-        std::vector<cv::Point> approx;
-        cv::approxPolyDP(c, approx, 0.04 * perimeter, true);
-
-        if (approx.size() == 4 && cv::isContourConvex(approx)) {
-            cv::Rect rect = cv::boundingRect(approx);
-            double aspect = static_cast<double>(rect.width) / std::max(1, rect.height);
-            if (aspect >= 0.60 && aspect <= 1.65) {
-                cv::Moments m = cv::moments(approx);
-                if (m.m00 > 0) {
-                    cv::Point2f center(static_cast<float>(m.m10 / m.m00), static_cast<float>(m.m01 / m.m00));
-                    candidates.push_back({center, area});
-                }
+        if (area >= 15.0 && area <= static_cast<double>(bgr.cols * bgr.rows) * 0.20) {
+            cv::Moments m = cv::moments(c);
+            if (m.m00 > 0) {
+                candidates.push_back({cv::Point2f(static_cast<float>(m.m10 / m.m00), static_cast<float>(m.m01 / m.m00)), area});
             }
         }
     }
 
-    if (candidates.empty()) return 0;
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+        return a.area > b.area;
+    });
 
     std::vector<cv::Point2f> unique_centers;
     for (const auto& cand : candidates) {
-        bool is_dup = false;
+        bool dup = false;
         for (const auto& existing : unique_centers) {
             float dx = cand.center.x - existing.x;
             float dy = cand.center.y - existing.y;
-            if (std::sqrt(dx * dx + dy * dy) < 25.0f) {
-                is_dup = true;
+            if (std::sqrt(dx * dx + dy * dy) < 20.0f) {
+                dup = true;
                 break;
             }
         }
-        if (!is_dup) {
+        if (!dup) {
             unique_centers.push_back(cand.center);
         }
     }
@@ -585,7 +643,7 @@ static int detect_aruco_corners_bgr(
     return count;
 }
 
-int detect_aruco_corners_rgba(
+int detect_colored_corners_rgba(
     const uint8_t* rgba_bytes,
     int width,
     int height,
@@ -606,10 +664,10 @@ int detect_aruco_corners_rgba(
         cv::cvtColor(img, bgr, cv::COLOR_RGBA2BGR);
     }
 
-    return detect_aruco_corners_bgr(bgr, out_x, out_y);
+    return detect_colored_corners_bgr(bgr, out_x, out_y);
 }
 
-int detect_aruco_corners_yuv420(
+int detect_colored_corners_yuv420(
     const uint8_t* y_plane,
     const uint8_t* u_plane,
     const uint8_t* v_plane,
@@ -650,7 +708,7 @@ int detect_aruco_corners_yuv420(
     cv::Mat bgr;
     cv::cvtColor(yuv_nv21, bgr, cv::COLOR_YUV2BGR_NV21);
 
-    return detect_aruco_corners_bgr(bgr, out_x, out_y);
+    return detect_colored_corners_bgr(bgr, out_x, out_y);
 }
 
 } // extern "C"

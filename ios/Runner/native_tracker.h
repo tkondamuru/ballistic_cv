@@ -94,10 +94,10 @@ TRACKER_EXPORT CalibratedHsvResult sample_hsv_color_yuv420(
     int reticle_radius
 );
 
-// Detect ArUco square marker centroids in frame.
+// Detect 4 colored corner markers (Red=TL, Green=TR, Blue=BR, Yellow=BL or 4 saturated squares).
 // out_x and out_y must point to arrays of size at least 4.
 // Returns the number of detected marker centers (0 to 4).
-TRACKER_EXPORT int detect_aruco_corners_rgba(
+TRACKER_EXPORT int detect_colored_corners_rgba(
     const uint8_t* rgba_bytes,
     int width,
     int height,
@@ -107,7 +107,7 @@ TRACKER_EXPORT int detect_aruco_corners_rgba(
     float* out_y
 );
 
-TRACKER_EXPORT int detect_aruco_corners_yuv420(
+TRACKER_EXPORT int detect_colored_corners_yuv420(
     const uint8_t* y_plane,
     const uint8_t* u_plane,
     const uint8_t* v_plane,
