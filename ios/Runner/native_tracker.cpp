@@ -527,7 +527,7 @@ static int detect_colored_corners_bgr(
     // Index 0: Red (TL)
     // Index 1: Green (TR)
     // Index 2: Blue (BR)
-    // Index 3: Yellow (BL)
+    // Index 3: Magenta (BL)
     struct ColorSpec {
         int h_min1, h_max1;
         int h_min2, h_max2;
@@ -535,10 +535,10 @@ static int detect_colored_corners_bgr(
     };
 
     ColorSpec specs[4] = {
-        {170, 179, 0, 10, 80, 80},   // Red (TL)
-        {35, 85, -1, -1, 80, 80},    // Green (TR)
-        {95, 135, -1, -1, 80, 80},   // Blue (BR)
-        {15, 34, -1, -1, 80, 80}     // Yellow (BL)
+        {170, 179, 0, 10, 60, 60},   // Red (TL)
+        {35, 85, -1, -1, 60, 60},    // Green (TR)
+        {95, 135, -1, -1, 60, 60},   // Blue (BR)
+        {140, 165, -1, -1, 60, 60}   // Magenta (BL)
     };
 
     cv::Point2f corner_pts[4];
@@ -584,7 +584,7 @@ static int detect_colored_corners_bgr(
         }
     }
 
-    // Case 1: All 4 distinct corner colors found (Red, Green, Blue, Yellow)
+    // Case 1: All 4 distinct corner colors found (Red, Green, Blue, Magenta)
     if (found_color_count == 4) {
         for (int i = 0; i < 4; ++i) {
             out_x[i] = corner_pts[i].x;
@@ -638,13 +638,17 @@ static int detect_colored_corners_bgr(
         }
     }
 
-    int count = std::min(4, static_cast<int>(unique_centers.size()));
-    for (int i = 0; i < count; ++i) {
+    // ONLY return points if EXACTLY 4 valid candidates are found!
+    if (unique_centers.size() != 4) {
+        return 0;
+    }
+
+    for (int i = 0; i < 4; ++i) {
         out_x[i] = unique_centers[i].x;
         out_y[i] = unique_centers[i].y;
     }
 
-    return count;
+    return 4;
 }
 
 int detect_colored_corners_rgba(

@@ -60,9 +60,9 @@
   #corner-bl {
     bottom: var(--tag-margin, 20px);
     left: var(--tag-margin, 20px);
-    background-color: #FFFF00; /* Yellow - Bottom Left */
-    color: rgba(0, 0, 0, 0.85);
-    text-shadow: none;
+    background-color: #FF00FF; /* Magenta - Bottom Left */
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
   }
 
   /* Interactive Shockwave Flash */
@@ -147,7 +147,7 @@
   <!-- 4 Corner Colored Square Markers -->
   <div id="corner-tl" class="marker-corner">TL (RED)</div>
   <div id="corner-tr" class="marker-corner">TR (GREEN)</div>
-  <div id="corner-bl" class="marker-corner">BL (YELLOW)</div>
+  <div id="corner-bl" class="marker-corner">BL (MAGENTA)</div>
   <div id="corner-br" class="marker-corner">BR (BLUE)</div>
 
   <!-- Floating Control Bar -->
@@ -227,14 +227,13 @@
         tl.style.backgroundColor = '#FF0000'; // Red
         tr.style.backgroundColor = '#00FF00'; // Green
         br.style.backgroundColor = '#0000FF'; // Blue
-        bl.style.backgroundColor = '#FFFF00'; // Yellow
-        bl.style.color = 'rgba(0, 0, 0, 0.85)';
-        bl.style.textShadow = 'none';
+        bl.style.backgroundColor = '#FF00FF'; // Magenta
+        bl.style.color = 'rgba(255, 255, 255, 0.95)';
 
         tl.textContent = 'TL (RED)';
         tr.textContent = 'TR (GREEN)';
         br.textContent = 'BR (BLUE)';
-        bl.textContent = 'BL (YELLOW)';
+        bl.textContent = 'BL (MAGENTA)';
       } else {
         colorModeBtn.textContent = 'Mode: Pure Cyan';
         tl.style.backgroundColor = '#00FFFF'; // Cyan
