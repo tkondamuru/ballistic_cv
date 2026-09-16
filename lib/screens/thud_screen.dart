@@ -37,9 +37,9 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   bool _isProcessing = false;
   DetectionResult? _lastDetection;
 
-  // ArUco Boundary State (null = unlocked/all deflections marked in real-time)
+  // Interactive Boundary Quad State
   List<Offset>? _arucoBoundary;
-  bool _scanArucoRequested = false;
+  bool _isBoundaryLocked = false;
 
   // Trajectory & Detection State
   final List<TrackingPoint> _trail = [];
@@ -154,61 +154,40 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     return true;
   }
 
-  void _onScanArucoPressed() {
+  void _onToggleBoundaryPressed() {
     if (_capture.busy) return;
-    if (_arucoBoundary != null) {
-      setState(() {
-        _arucoBoundary = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('ArUco boundary unlocked.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     setState(() {
-      _scanArucoRequested = true;
-    });
-  }
-
-  void _performArucoScan(CameraImage image) {
-    _scanArucoRequested = false;
-
-    // Detect real ArUco / square quad marker centroids from OpenCV
-    final detectedCorners =
-        NativeTracker.instance.detectArucoCornersFromCameraImage(image);
-
-    if (detectedCorners.length == 4) {
-      final ordered = orderArUcoCorners(detectedCorners);
-      setState(() {
-        _arucoBoundary = ordered;
+      if (_isBoundaryLocked) {
+        _isBoundaryLocked = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Boundary unlocked. Drag corner handles to align.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } else {
+        _isBoundaryLocked = true;
+        if (_arucoBoundary == null || _arucoBoundary!.length != 4) {
+          final w = _lastDetection?.frameWidth.toDouble() ?? 480.0;
+          final h = _lastDetection?.frameHeight.toDouble() ?? 360.0;
+          _arucoBoundary = [
+            Offset(w * 0.15, h * 0.15),
+            Offset(w * 0.85, h * 0.15),
+            Offset(w * 0.85, h * 0.85),
+            Offset(w * 0.15, h * 0.85),
+          ];
+        }
         // Clear all previous hit points when boundary is locked
         _recordedHits.clear();
         _activeSplashes.clear();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('4 ArUco codes identified. Boundary locked.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } else {
-      final count = detectedCorners.length;
-      setState(() {
-        _arucoBoundary = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Identified $count ArUco code(s) (4 required). Move camera to focus.',
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Boundary locked. Hits inside quad will be tracked.'),
+            duration: Duration(seconds: 2),
           ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
+        );
+      }
+    });
   }
 
   void _processCameraFrame(CameraImage image) {
@@ -226,10 +205,6 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         vMax: widget.hsvProfile.vMax,
         enableMotion: false,
       );
-
-      if (_scanArucoRequested) {
-        _performArucoScan(image);
-      }
 
       // FPS Calculation
       _frameCount++;
@@ -259,7 +234,8 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
           _lastDetection = detection;
 
           final bool validLocation = detection.detected &&
-              (_arucoBoundary == null ||
+              (!_isBoundaryLocked ||
+                  _arucoBoundary == null ||
                   _isPointInsideQuad(
                     Offset(detection.x, detection.y),
                     _arucoBoundary!,
@@ -493,18 +469,117 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                 ),
               ),
 
-            // 2. CustomPainter Thud Impact & Motion Layer
+            // 2. CustomPainter Thud Impact, Motion Layer & Interactive Drag Handles
             if (hasCamera && _lastDetection != null)
-              CustomPaint(
-                painter: ThudPainter(
-                  detection: _lastDetection,
-                  trail: _trail,
-                  recordedHits: _recordedHits,
-                  activeSplashes: _activeSplashes,
-                  arucoCorners: _arucoBoundary,
-                  sensorOrientation:
-                      _controller!.description.sensorOrientation,
-                ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final screenSize = constraints.biggest;
+                  final frameW = _lastDetection!.frameWidth > 0
+                      ? _lastDetection!.frameWidth.toDouble()
+                      : 480.0;
+                  final frameH = _lastDetection!.frameHeight > 0
+                      ? _lastDetection!.frameHeight.toDouble()
+                      : 360.0;
+                  final orientation =
+                      _controller?.description.sensorOrientation ?? 90;
+
+                  Offset toScreen(double camX, double camY) {
+                    if (orientation == 90 && frameW > frameH) {
+                      final screenX = (1.0 - (camY / frameH)) * screenSize.width;
+                      final screenY = (camX / frameW) * screenSize.height;
+                      return Offset(screenX, screenY);
+                    } else {
+                      final screenX = (camX / frameW) * screenSize.width;
+                      final screenY = (camY / frameH) * screenSize.height;
+                      return Offset(screenX, screenY);
+                    }
+                  }
+
+                  Offset toCamera(Offset screen) {
+                    if (orientation == 90 && frameW > frameH) {
+                      final camX = (screen.dy / screenSize.height) * frameW;
+                      final camY = (1.0 - (screen.dx / screenSize.width)) * frameH;
+                      return Offset(camX.clamp(0.0, frameW), camY.clamp(0.0, frameH));
+                    } else {
+                      final camX = (screen.dx / screenSize.width) * frameW;
+                      final camY = (screen.dy / screenSize.height) * frameH;
+                      return Offset(camX.clamp(0.0, frameW), camY.clamp(0.0, frameH));
+                    }
+                  }
+
+                  final currentBoundary = _arucoBoundary ?? [
+                    Offset(frameW * 0.15, frameH * 0.15),
+                    Offset(frameW * 0.85, frameH * 0.15),
+                    Offset(frameW * 0.85, frameH * 0.85),
+                    Offset(frameW * 0.15, frameH * 0.85),
+                  ];
+
+                  final labels = ['TL', 'TR', 'BR', 'BL'];
+
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CustomPaint(
+                        painter: ThudPainter(
+                          detection: _lastDetection,
+                          trail: _trail,
+                          recordedHits: _recordedHits,
+                          activeSplashes: _activeSplashes,
+                          arucoCorners: currentBoundary,
+                          isBoundaryLocked: _isBoundaryLocked,
+                          sensorOrientation: orientation,
+                        ),
+                      ),
+                      if (!_isBoundaryLocked)
+                        ...List.generate(4, (i) {
+                          final screenPos = toScreen(
+                            currentBoundary[i].dx,
+                            currentBoundary[i].dy,
+                          );
+                          return Positioned(
+                            left: screenPos.dx - 22,
+                            top: screenPos.dy - 22,
+                            child: GestureDetector(
+                              onPanUpdate: (details) {
+                                final newScreen = screenPos + details.delta;
+                                final newCam = toCamera(newScreen);
+                                setState(() {
+                                  _arucoBoundary ??= List<Offset>.from(currentBoundary);
+                                  _arucoBoundary![i] = newCam;
+                                });
+                              },
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00FF66).withValues(alpha: 0.90),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.black, width: 2.5),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black54,
+                                      blurRadius: 6,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    labels[i],
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                    ],
+                  );
+                },
               ),
 
             // 3. Bottom Stats Bar (Hit & FPS Stats, Target Swatch & Coordinates)
@@ -521,7 +596,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Hit & FPS Readout Box with ArUco Scan Icon
+                      // Hit & FPS Readout Box with Lock/Unlock Boundary Icon
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -531,33 +606,31 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                           color: Colors.black.withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: _arucoBoundary != null
+                            color: _isBoundaryLocked
                                 ? const Color(0xFF00FF66)
-                                : Colors.white12,
+                                : Colors.orangeAccent,
                           ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              tooltip: _arucoBoundary != null
-                                  ? 'ArUco boundary locked. Tap to unlock.'
-                                  : 'Scan for ArUco boundary (4 markers)',
+                              tooltip: _isBoundaryLocked
+                                  ? 'Boundary locked. Tap to unlock and drag corner handles.'
+                                  : 'Boundary unlocked (Editing pins). Tap to lock boundary.',
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(
                                 minWidth: 30,
                                 minHeight: 30,
                               ),
                               icon: Icon(
-                                _arucoBoundary != null
-                                    ? Icons.crop_free
-                                    : Icons.qr_code_scanner,
-                                color: _arucoBoundary != null
+                                _isBoundaryLocked ? Icons.lock : Icons.lock_open,
+                                color: _isBoundaryLocked
                                     ? const Color(0xFF00FF66)
-                                    : Colors.white70,
+                                    : Colors.orangeAccent,
                                 size: 20,
                               ),
-                              onPressed: _onScanArucoPressed,
+                              onPressed: _onToggleBoundaryPressed,
                             ),
                             const SizedBox(width: 6),
                             Column(

@@ -43,6 +43,7 @@ class ThudPainter extends CustomPainter {
   final List<ThudHit> recordedHits;
   final List<ActiveSplash> activeSplashes;
   final List<Offset>? arucoCorners;
+  final bool isBoundaryLocked;
   final int sensorOrientation;
 
   ThudPainter({
@@ -51,6 +52,7 @@ class ThudPainter extends CustomPainter {
     required this.recordedHits,
     required this.activeSplashes,
     this.arucoCorners,
+    this.isBoundaryLocked = false,
     this.sensorOrientation = 90,
   });
 
@@ -215,7 +217,7 @@ class ThudPainter extends CustomPainter {
       canvas.drawCircle(sCenter, rad * 0.7, shockwavePaint2);
     }
 
-    // 5. Draw ArUco Ordered Boundary Quad Overlay (bright green lines)
+    // 5. Draw Ordered Boundary Quad Overlay (bright green when locked, orange when editing)
     if (arucoCorners != null && arucoCorners!.length == 4) {
       final ordered = orderArUcoCorners(arucoCorners!);
       final screenQuad = ordered.map((c) => toScreenOffset(c.dx, c.dy)).toList();
@@ -227,13 +229,15 @@ class ThudPainter extends CustomPainter {
         ..lineTo(screenQuad[3].dx, screenQuad[3].dy)
         ..close();
 
+      final quadColor = isBoundaryLocked ? const Color(0xFF00FF66) : Colors.orangeAccent;
+
       final quadPaint = Paint()
-        ..color = const Color(0xFF00FF66)
+        ..color = quadColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.0;
+        ..strokeWidth = isBoundaryLocked ? 3.0 : 2.5;
 
       final fillPaint = Paint()
-        ..color = const Color(0xFF00FF66).withValues(alpha: 0.12)
+        ..color = quadColor.withValues(alpha: isBoundaryLocked ? 0.12 : 0.06)
         ..style = PaintingStyle.fill;
 
       canvas.drawPath(quadPath, fillPaint);
