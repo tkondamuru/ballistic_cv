@@ -92,29 +92,6 @@ CalibratedHsvResult sample_hsv_color_yuv420(
     int reticle_radius
 );
 
-int detect_colored_corners_rgba(
-    const uint8_t* rgba_bytes,
-    int width,
-    int height,
-    int is_bgra,
-    int row_stride,
-    float* out_x,
-    float* out_y
-);
-
-int detect_colored_corners_yuv420(
-    const uint8_t* y_plane,
-    const uint8_t* u_plane,
-    const uint8_t* v_plane,
-    int width,
-    int height,
-    int y_row_stride,
-    int uv_row_stride,
-    int uv_pixel_stride,
-    float* out_x,
-    float* out_y
-);
-
 #ifdef __cplusplus
 }
 #endif

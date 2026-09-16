@@ -243,52 +243,6 @@ typedef _SampleHsvYuv420Dart = CalibratedHsvResultStruct Function(
   int reticleRadius,
 );
 
-typedef _DetectColoredCornersRgbaC = Int32 Function(
-  Pointer<Uint8> rgbaBytes,
-  Int32 width,
-  Int32 height,
-  Int32 isBgra,
-  Int32 rowStride,
-  Pointer<Float> outX,
-  Pointer<Float> outY,
-);
-
-typedef _DetectColoredCornersRgbaDart = int Function(
-  Pointer<Uint8> rgbaBytes,
-  int width,
-  int height,
-  int isBgra,
-  int rowStride,
-  Pointer<Float> outX,
-  Pointer<Float> outY,
-);
-
-typedef _DetectColoredCornersYuv420C = Int32 Function(
-  Pointer<Uint8> yPlane,
-  Pointer<Uint8> uPlane,
-  Pointer<Uint8> vPlane,
-  Int32 width,
-  Int32 height,
-  Int32 yRowStride,
-  Int32 uvRowStride,
-  Int32 uvPixelStride,
-  Pointer<Float> outX,
-  Pointer<Float> outY,
-);
-
-typedef _DetectColoredCornersYuv420Dart = int Function(
-  Pointer<Uint8> yPlane,
-  Pointer<Uint8> uPlane,
-  Pointer<Uint8> vPlane,
-  int width,
-  int height,
-  int yRowStride,
-  int uvRowStride,
-  int uvPixelStride,
-  Pointer<Float> outX,
-  Pointer<Float> outY,
-);
-
 class NativeTracker {
   static final NativeTracker instance = NativeTracker._internal();
 
@@ -299,8 +253,6 @@ class NativeTracker {
   late final _DetectBallRgbaDart _detectBallRgba;
   late final _SampleHsvRgbaDart _sampleHsvRgba;
   late final _SampleHsvYuv420Dart _sampleHsvYuv420;
-  late final _DetectColoredCornersRgbaDart _detectColoredCornersRgba;
-  late final _DetectColoredCornersYuv420Dart _detectColoredCornersYuv420;
 
   // Reusable native buffers for zero GC churn
   Pointer<Uint8>? _yBuffer;
@@ -312,9 +264,6 @@ class NativeTracker {
 
   Pointer<Uint8>? _rgbaBuffer;
   int _rgbaBufferSize = 0;
-
-  Pointer<Float>? _outX;
-  Pointer<Float>? _outY;
 
   bool _initialized = false;
   bool get isInitialized => _initialized;
@@ -355,14 +304,6 @@ class NativeTracker {
     _sampleHsvYuv420 = _lib
         .lookup<NativeFunction<_SampleHsvYuv420C>>('sample_hsv_color_yuv420')
         .asFunction<_SampleHsvYuv420Dart>();
-
-    _detectColoredCornersRgba = _lib
-        .lookup<NativeFunction<_DetectColoredCornersRgbaC>>('detect_colored_corners_rgba')
-        .asFunction<_DetectColoredCornersRgbaDart>();
-
-    _detectColoredCornersYuv420 = _lib
-        .lookup<NativeFunction<_DetectColoredCornersYuv420C>>('detect_colored_corners_yuv420')
-        .asFunction<_DetectColoredCornersYuv420Dart>();
 
     _initialized = true;
   }
@@ -568,79 +509,6 @@ class NativeTracker {
     );
   }
 
-  List<Offset> detectArucoCornersFromCameraImage(CameraImage image) {
-    initialize();
-
-    _outX ??= malloc.allocate<Float>(sizeOf<Float>() * 4);
-    _outY ??= malloc.allocate<Float>(sizeOf<Float>() * 4);
-
-    int count = 0;
-
-    if (image.format.group == ImageFormatGroup.yuv420 && image.planes.length >= 3) {
-      final yPlane = image.planes[0];
-      final uPlane = image.planes[1];
-      final vPlane = image.planes[2];
-
-      if (_yBuffer == null || _yBufferSize < yPlane.bytes.length) {
-        if (_yBuffer != null) malloc.free(_yBuffer!);
-        _yBufferSize = yPlane.bytes.length;
-        _yBuffer = malloc.allocate<Uint8>(_yBufferSize);
-      }
-      if (_uBuffer == null || _uBufferSize < uPlane.bytes.length) {
-        if (_uBuffer != null) malloc.free(_uBuffer!);
-        _uBufferSize = uPlane.bytes.length;
-        _uBuffer = malloc.allocate<Uint8>(_uBufferSize);
-      }
-      if (_vBuffer == null || _vBufferSize < vPlane.bytes.length) {
-        if (_vBuffer != null) malloc.free(_vBuffer!);
-        _vBufferSize = vPlane.bytes.length;
-        _vBuffer = malloc.allocate<Uint8>(_vBufferSize);
-      }
-
-      _yBuffer!.asTypedList(yPlane.bytes.length).setAll(0, yPlane.bytes);
-      _uBuffer!.asTypedList(uPlane.bytes.length).setAll(0, uPlane.bytes);
-      _vBuffer!.asTypedList(vPlane.bytes.length).setAll(0, vPlane.bytes);
-
-      count = _detectColoredCornersYuv420(
-        _yBuffer!,
-        _uBuffer!,
-        _vBuffer!,
-        image.width,
-        image.height,
-        yPlane.bytesPerRow,
-        uPlane.bytesPerRow,
-        uPlane.bytesPerPixel ?? 1,
-        _outX!,
-        _outY!,
-      );
-    } else if (image.format.group == ImageFormatGroup.bgra8888 || image.planes.length == 1) {
-      final plane = image.planes[0];
-      if (_rgbaBuffer == null || _rgbaBufferSize < plane.bytes.length) {
-        if (_rgbaBuffer != null) malloc.free(_rgbaBuffer!);
-        _rgbaBufferSize = plane.bytes.length;
-        _rgbaBuffer = malloc.allocate<Uint8>(_rgbaBufferSize);
-      }
-      _rgbaBuffer!.asTypedList(plane.bytes.length).setAll(0, plane.bytes);
-
-      final isBgra = image.format.group == ImageFormatGroup.bgra8888 ? 1 : 0;
-      count = _detectColoredCornersRgba(
-        _rgbaBuffer!,
-        image.width,
-        image.height,
-        isBgra,
-        plane.bytesPerRow,
-        _outX!,
-        _outY!,
-      );
-    }
-
-    final List<Offset> points = [];
-    for (int i = 0; i < count; i++) {
-      points.add(Offset(_outX![i], _outY![i]));
-    }
-    return points;
-  }
-
   void dispose() {
     if (_yBuffer != null) {
       malloc.free(_yBuffer!);
@@ -657,14 +525,6 @@ class NativeTracker {
     if (_rgbaBuffer != null) {
       malloc.free(_rgbaBuffer!);
       _rgbaBuffer = null;
-    }
-    if (_outX != null) {
-      malloc.free(_outX!);
-      _outX = null;
-    }
-    if (_outY != null) {
-      malloc.free(_outY!);
-      _outY = null;
     }
   }
 }
