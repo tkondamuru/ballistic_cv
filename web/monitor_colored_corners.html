@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desktop Monitor Colored Corner Target Surface</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+  }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background-color: #FFFFFF;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: background-color 0.3s ease;
+  }
+  body.dark-mode {
+    background-color: #111116;
+  }
+  
+  /* Corner Colored Square Markers */
+  .marker-corner {
+    position: absolute;
+    width: var(--tag-size, 220px);
+    height: var(--tag-size, 220px);
+    z-index: 10;
+    border-radius: var(--corner-radius, 8px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    transition: width 0.15s ease, height 0.15s ease, top 0.15s ease, bottom 0.15s ease, left 0.15s ease, right 0.15s ease, background-color 0.2s ease, border-radius 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    letter-spacing: 1px;
+  }
+  
+  #corner-tl {
+    top: var(--tag-margin, 20px);
+    left: var(--tag-margin, 20px);
+    background-color: #FF0000; /* Red - Top Left */
+  }
+  #corner-tr {
+    top: var(--tag-margin, 20px);
+    right: var(--tag-margin, 20px);
+    background-color: #00FF00; /* Green - Top Right */
+  }
+  #corner-br {
+    bottom: var(--tag-margin, 20px);
+    right: var(--tag-margin, 20px);
+    background-color: #0000FF; /* Blue - Bottom Right */
+  }
+  #corner-bl {
+    bottom: var(--tag-margin, 20px);
+    left: var(--tag-margin, 20px);
+    background-color: #FFFF00; /* Yellow - Bottom Left */
+    color: rgba(0, 0, 0, 0.85);
+    text-shadow: none;
+  }
+
+  /* Interactive Shockwave Flash */
+  .shockwave {
+    position: absolute;
+    border-radius: 50%;
+    border: 6px solid #00FF66;
+    pointer-events: none;
+    animation: explode 0.5s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  }
+  @keyframes explode {
+    0% { width: 20px; height: 20px; opacity: 1; transform: translate(-50%, -50%); }
+    100% { width: 280px; height: 280px; opacity: 0; transform: translate(-50%, -50%); }
+  }
+
+  /* Floating Control Toolbar */
+  .toolbar {
+    position: fixed;
+    bottom: 25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 25, 0.88);
+    backdrop-filter: blur(12px);
+    color: white;
+    padding: 12px 26px;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 13px;
+    z-index: 100;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .toolbar.hidden {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+    pointer-events: none;
+  }
+  .toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .toolbar input[type="range"] {
+    cursor: pointer;
+  }
+  .btn {
+    background: #00FF66;
+    color: #051a0b;
+    border: none;
+    padding: 7px 16px;
+    border-radius: 16px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn:hover { background: #00cc52; transform: scale(1.03); }
+  
+  .hint {
+    position: fixed;
+    top: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 6px 18px;
+    border-radius: 12px;
+    font-size: 12px;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    z-index: 50;
+  }
+</style>
+</head>
+<body>
+
+  <div id="hint" class="hint">Double-click or press [F11] for Fullscreen | Controls fade on idle</div>
+
+  <!-- 4 Corner Colored Square Markers -->
+  <div id="corner-tl" class="marker-corner">TL (RED)</div>
+  <div id="corner-tr" class="marker-corner">TR (GREEN)</div>
+  <div id="corner-bl" class="marker-corner">BL (YELLOW)</div>
+  <div id="corner-br" class="marker-corner">BR (BLUE)</div>
+
+  <!-- Floating Control Bar -->
+  <div id="toolbar" class="toolbar">
+    <label>
+      Square Size:
+      <input type="range" id="sizeSlider" min="120" max="350" value="220">
+      <span id="sizeLabel">220px</span>
+    </label>
+
+    <label>
+      Margin:
+      <input type="range" id="marginSlider" min="10" max="80" value="20">
+      <span id="marginLabel">20px</span>
+    </label>
+
+    <label>
+      Shape:
+      <select id="shapeSelect" class="btn" style="background: #2a2a35; color: #fff; padding: 5px 10px;">
+        <option value="8px">Square (8px radius)</option>
+        <option value="0px">Sharp Box</option>
+        <option value="50%">Circle</option>
+      </select>
+    </label>
+
+    <button id="colorModeBtn" class="btn">Mode: 4 Unique Colors</button>
+    <button id="themeBtn" class="btn">Theme: Light</button>
+    <button id="fsBtn" class="btn">Fullscreen</button>
+  </div>
+
+  <script>
+    const body = document.body;
+    const toolbar = document.getElementById('toolbar');
+    const hint = document.getElementById('hint');
+
+    const tl = document.getElementById('corner-tl');
+    const tr = document.getElementById('corner-tr');
+    const br = document.getElementById('corner-br');
+    const bl = document.getElementById('corner-bl');
+
+    const sizeSlider = document.getElementById('sizeSlider');
+    const sizeLabel = document.getElementById('sizeLabel');
+    const marginSlider = document.getElementById('marginSlider');
+    const marginLabel = document.getElementById('marginLabel');
+    const shapeSelect = document.getElementById('shapeSelect');
+    const colorModeBtn = document.getElementById('colorModeBtn');
+    const themeBtn = document.getElementById('themeBtn');
+    const fsBtn = document.getElementById('fsBtn');
+
+    let modeUnique = true;
+    let isDark = false;
+
+    // Size Slider
+    sizeSlider.addEventListener('input', (e) => {
+      const px = e.target.value;
+      document.documentElement.style.setProperty('--tag-size', `${px}px`);
+      sizeLabel.textContent = `${px}px`;
+    });
+
+    // Margin Slider
+    marginSlider.addEventListener('input', (e) => {
+      const px = e.target.value;
+      document.documentElement.style.setProperty('--tag-margin', `${px}px`);
+      marginLabel.textContent = `${px}px`;
+    });
+
+    // Shape Selector
+    shapeSelect.addEventListener('change', (e) => {
+      document.documentElement.style.setProperty('--corner-radius', e.target.value);
+    });
+
+    // Color Mode Toggle (4 Unique Colors vs 4 Cyan Squares)
+    colorModeBtn.addEventListener('click', () => {
+      modeUnique = !modeUnique;
+      if (modeUnique) {
+        colorModeBtn.textContent = 'Mode: 4 Unique Colors';
+        tl.style.backgroundColor = '#FF0000'; // Red
+        tr.style.backgroundColor = '#00FF00'; // Green
+        br.style.backgroundColor = '#0000FF'; // Blue
+        bl.style.backgroundColor = '#FFFF00'; // Yellow
+        bl.style.color = 'rgba(0, 0, 0, 0.85)';
+        bl.style.textShadow = 'none';
+
+        tl.textContent = 'TL (RED)';
+        tr.textContent = 'TR (GREEN)';
+        br.textContent = 'BR (BLUE)';
+        bl.textContent = 'BL (YELLOW)';
+      } else {
+        colorModeBtn.textContent = 'Mode: Pure Cyan';
+        tl.style.backgroundColor = '#00FFFF'; // Cyan
+        tr.style.backgroundColor = '#00FFFF';
+        br.style.backgroundColor = '#00FFFF';
+        bl.style.backgroundColor = '#00FFFF';
+        bl.style.color = 'rgba(0, 0, 0, 0.85)';
+
+        tl.textContent = 'TL';
+        tr.textContent = 'TR';
+        br.textContent = 'BR';
+        bl.textContent = 'BL';
+      }
+    });
+
+    // Background Theme Toggle
+    themeBtn.addEventListener('click', () => {
+      isDark = !isDark;
+      if (isDark) {
+        body.classList.add('dark-mode');
+        themeBtn.textContent = 'Theme: Dark';
+      } else {
+        body.classList.remove('dark-mode');
+        themeBtn.textContent = 'Theme: Light';
+      }
+    });
+
+    // Fullscreen Toggle
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    fsBtn.addEventListener('click', toggleFullscreen);
+    window.addEventListener('dblclick', (e) => {
+      if (!toolbar.contains(e.target)) {
+        toggleFullscreen();
+      }
+    });
+
+    // Shockwave click effect
+    window.addEventListener('click', (e) => {
+      if (toolbar.contains(e.target)) return;
+      const wave = document.createElement('div');
+      wave.className = 'shockwave';
+      wave.style.left = e.clientX + 'px';
+      wave.style.top = e.clientY + 'px';
+      document.body.appendChild(wave);
+      setTimeout(() => wave.remove(), 500);
+    });
+
+    // Controls Auto-Fade on Idle
+    let idleTimer;
+    function resetIdleTimer() {
+      toolbar.classList.remove('hidden');
+      hint.style.opacity = '1';
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        toolbar.classList.add('hidden');
+        hint.style.opacity = '0';
+      }, 4000);
+    }
+
+    window.addEventListener('mousemove', resetIdleTimer);
+    window.addEventListener('mousedown', resetIdleTimer);
+    window.addEventListener('touchstart', resetIdleTimer);
+    resetIdleTimer();
+  </script>
+</body>
+</html>
