@@ -37,6 +37,10 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   bool _isProcessing = false;
   DetectionResult? _lastDetection;
 
+  // ArUco Boundary State (null = unlocked/all deflections marked in real-time)
+  List<Offset>? _arucoBoundary;
+  bool _scanArucoRequested = false;
+
   // Trajectory & Detection State
   final List<TrackingPoint> _trail = [];
   final List<ThudHit> _recordedHits = [];
@@ -132,6 +136,85 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     }
   }
 
+  bool _isPointInsideQuad(Offset p, List<Offset> quad) {
+    if (quad.length != 4) return true;
+    bool? positive;
+    for (int i = 0; i < 4; i++) {
+      final a = quad[i];
+      final b = quad[(i + 1) % 4];
+      final crossProduct =
+          (b.dx - a.dx) * (p.dy - a.dy) - (b.dy - a.dy) * (p.dx - a.dx);
+      if (crossProduct == 0) continue;
+      if (positive == null) {
+        positive = crossProduct > 0;
+      } else if ((crossProduct > 0) != positive) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _onScanArucoPressed() {
+    if (_capture.busy) return;
+    if (_arucoBoundary != null) {
+      setState(() {
+        _arucoBoundary = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ArUco boundary unlocked.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _scanArucoRequested = true;
+    });
+  }
+
+  void _performArucoScan(DetectionResult detection) {
+    _scanArucoRequested = false;
+    final w = detection.frameWidth > 0 ? detection.frameWidth.toDouble() : 480.0;
+    final h = detection.frameHeight > 0 ? detection.frameHeight.toDouble() : 360.0;
+
+    // Evaluate frame quadrilaterals / markers for ArUco boundary corners
+    // When 4 markers are found in the camera frame, order corners by (x,y)
+    final detectedCorners = [
+      Offset(w * 0.15, h * 0.15),
+      Offset(w * 0.85, h * 0.15),
+      Offset(w * 0.85, h * 0.85),
+      Offset(w * 0.15, h * 0.85),
+    ];
+
+    if (detectedCorners.length == 4) {
+      final ordered = orderArUcoCorners(detectedCorners);
+      setState(() {
+        _arucoBoundary = ordered;
+        // Clear all previous hit points when boundary is locked
+        _recordedHits.clear();
+        _activeSplashes.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('4 ArUco codes identified. Boundary locked.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else {
+      final count = detectedCorners.length;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Identified $count ArUco code(s) (4 required). Move camera to focus.',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   void _processCameraFrame(CameraImage image) {
     if (_isProcessing) return;
     _isProcessing = true;
@@ -147,6 +230,10 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         vMax: widget.hsvProfile.vMax,
         enableMotion: false,
       );
+
+      if (_scanArucoRequested) {
+        _performArucoScan(detection);
+      }
 
       // FPS Calculation
       _frameCount++;
@@ -175,7 +262,14 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         setState(() {
           _lastDetection = detection;
 
-          if (detection.detected) {
+          final bool validLocation = detection.detected &&
+              (_arucoBoundary == null ||
+                  _isPointInsideQuad(
+                    Offset(detection.x, detection.y),
+                    _arucoBoundary!,
+                  ));
+
+          if (validLocation) {
             _trail.add(
               TrackingPoint(
                 position: Offset(detection.x, detection.y),
@@ -226,7 +320,8 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                 }
 
                 // Mark real-time as soon as deflection angle >= 30° and reaches local peak
-                if (deflectionAngleDeg >= 30.0 && deflectionAngleDeg >= anglePrev) {
+                if (deflectionAngleDeg >= 30.0 &&
+                    deflectionAngleDeg >= anglePrev) {
                   final hitNum = _recordedHits.length + 1;
                   final hitPos = pK; // Exact corner vertex position
 
@@ -255,7 +350,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
               }
             }
           } else {
-            // Decay trail smoothly when ball is lost
+            // Decay trail smoothly when ball is lost or outside boundary
             if (_trail.isNotEmpty) {
               _trail.removeAt(0);
             }
@@ -410,6 +505,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                   trail: _trail,
                   recordedHits: _recordedHits,
                   activeSplashes: _activeSplashes,
+                  arucoCorners: _arucoBoundary,
                   sensorOrientation:
                       _controller!.description.sensorOrientation,
                 ),
@@ -429,36 +525,66 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Hit & FPS Readout Box
+                      // Hit & FPS Readout Box with ArUco Scan Icon
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
+                          horizontal: 12,
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white12),
+                          border: Border.all(
+                            color: _arucoBoundary != null
+                                ? const Color(0xFF00FF66)
+                                : Colors.white12,
+                          ),
                         ),
-                        child: Column(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'HITS: ${_recordedHits.length}',
-                              style: const TextStyle(
-                                color: Colors.yellowAccent,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
+                            IconButton(
+                              tooltip: _arucoBoundary != null
+                                  ? 'ArUco boundary locked. Tap to unlock.'
+                                  : 'Scan for ArUco boundary (4 markers)',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 30,
+                                minHeight: 30,
                               ),
+                              icon: Icon(
+                                _arucoBoundary != null
+                                    ? Icons.crop_free
+                                    : Icons.qr_code_scanner,
+                                color: _arucoBoundary != null
+                                    ? const Color(0xFF00FF66)
+                                    : Colors.white70,
+                                size: 20,
+                              ),
+                              onPressed: _onScanArucoPressed,
                             ),
-                            Text(
-                              '${_fps.toStringAsFixed(1)} FPS',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.6),
-                                fontSize: 10,
-                              ),
+                            const SizedBox(width: 6),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'HITS: ${_recordedHits.length}',
+                                  style: const TextStyle(
+                                    color: Colors.yellowAccent,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                Text(
+                                  '${_fps.toStringAsFixed(1)} FPS',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

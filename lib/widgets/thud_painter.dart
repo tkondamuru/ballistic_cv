@@ -215,7 +215,7 @@ class ThudPainter extends CustomPainter {
       canvas.drawCircle(sCenter, rad * 0.7, shockwavePaint2);
     }
 
-    // 5. Draw ArUco Ordered Boundary Quad Overlay (if ArUco markers detected)
+    // 5. Draw ArUco Ordered Boundary Quad Overlay (bright green lines)
     if (arucoCorners != null && arucoCorners!.length == 4) {
       final ordered = orderArUcoCorners(arucoCorners!);
       final screenQuad = ordered.map((c) => toScreenOffset(c.dx, c.dy)).toList();
@@ -228,12 +228,12 @@ class ThudPainter extends CustomPainter {
         ..close();
 
       final quadPaint = Paint()
-        ..color = Colors.cyanAccent
+        ..color = const Color(0xFF00FF66)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5;
+        ..strokeWidth = 3.0;
 
       final fillPaint = Paint()
-        ..color = Colors.cyanAccent.withValues(alpha: 0.12)
+        ..color = const Color(0xFF00FF66).withValues(alpha: 0.12)
         ..style = PaintingStyle.fill;
 
       canvas.drawPath(quadPath, fillPaint);
