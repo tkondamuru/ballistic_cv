@@ -44,8 +44,6 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   // Interactive Boundary Quad State
   List<Offset>? _arucoBoundary;
   bool _isBoundaryLocked = false;
-  bool _inWallContact = false;
-  final List<TrackingPoint> _wallContactPoints = [];
 
   // Trajectory & Detection State
   final List<TrackingPoint> _trail = [];
@@ -246,9 +244,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
             Offset(w * 0.15, h * 0.85),
           ];
         }
-        // Clear all previous hit points and wall contact state when boundary is locked
-        _inWallContact = false;
-        _wallContactPoints.clear();
+        // Clear all previous hit points when boundary is locked
         _recordedHits.clear();
         _activeSplashes.clear();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -266,6 +262,18 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     _isProcessing = true;
 
     try {
+      final imgW = image.width.toDouble();
+      final imgH = image.height.toDouble();
+      final currentQuad = _arucoBoundary ?? [
+        Offset(imgW * 0.15, imgH * 0.15),
+        Offset(imgW * 0.85, imgH * 0.15),
+        Offset(imgW * 0.85, imgH * 0.85),
+        Offset(imgW * 0.15, imgH * 0.85),
+      ];
+      final bool nearWall = _trail.isNotEmpty &&
+          _isNearOrOutsideWall(_trail.last.position, currentQuad, 50.0);
+      final double circularityThreshold = nearWall ? 0.15 : 0.35;
+
       final detection = NativeTracker.instance.detectFromCameraImage(
         image,
         hMin: widget.hsvProfile.hMin,
@@ -275,6 +283,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         vMin: widget.hsvProfile.vMin,
         vMax: widget.hsvProfile.vMax,
         enableMotion: false,
+        minCircularity: circularityThreshold,
       );
 
       // FPS Calculation
@@ -327,95 +336,78 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
               _trail.removeAt(0);
             }
 
-            // Wall Collision & Impact Deflection Logic (Triggered on Wall Exit)
-            if (_isBoundaryLocked) {
-              final bool touchingWall =
-                  _isNearOrOutsideWall(currentPos, currentQuad, 40.0);
+            // Wall Collision & Displacement Gated Impact Detection on _trail Directly
+            if (_isBoundaryLocked && _cooldownFrames == 0) {
+              final validTrail =
+                  _trail.where((p) => !p.isPredicted).toList();
 
-              if (touchingWall) {
-                if (!_inWallContact) {
-                  _inWallContact = true;
-                  _wallContactPoints.clear();
-                  if (_trail.length >= 2) {
-                    _wallContactPoints.add(_trail[_trail.length - 2]);
-                  }
-                }
-                _wallContactPoints.add(trackingPoint);
-              } else {
-                // Ball is inside quad and NOT touching wall
-                if (_inWallContact) {
-                  // Ball just bounced OFF the wall back into quad interior!
-                  _inWallContact = false;
+              if (validTrail.length >= 3) {
+                final bool currentlyNearWall =
+                    _isNearOrOutsideWall(currentPos, currentQuad, 40.0);
 
-                  if (_wallContactPoints.isNotEmpty && _cooldownFrames == 0) {
-                    int bestIdx = 0;
-                    double maxDeflection = 0.0;
+                if (!currentlyNearWall && validTrail.length >= 4) {
+                  final pLast = validTrail.last.position;
 
-                    if (_wallContactPoints.length >= 3) {
-                      for (int k = 1; k < _wallContactPoints.length - 1; k++) {
-                        final pA = _wallContactPoints[k - 1].position;
-                        final pK = _wallContactPoints[k].position;
-                        final pB = _wallContactPoints[k + 1].position;
+                  int bestIdx = -1;
+                  double minEdgeDist = double.infinity;
+                  final searchCount = math.min(10, validTrail.length - 1);
 
-                        final vIn = Offset(pK.dx - pA.dx, pK.dy - pA.dy);
-                        final vOut = Offset(pB.dx - pK.dx, pB.dy - pK.dy);
-                        final sIn = vIn.distance;
-                        final sOut = vOut.distance;
-
-                        if (sIn >= 1.5 && sOut >= 1.5) {
-                          final dot = vIn.dx * vOut.dx + vIn.dy * vOut.dy;
-                          final cosTheta =
-                              (dot / (sIn * sOut)).clamp(-1.0, 1.0);
-                          final angle =
-                              math.acos(cosTheta) * (180.0 / math.pi);
-                          if (angle > maxDeflection) {
-                            maxDeflection = angle;
-                            bestIdx = k;
-                          }
-                        }
+                  for (int i = validTrail.length - searchCount;
+                      i < validTrail.length - 1;
+                      i++) {
+                    final pt = validTrail[i];
+                    if (_isNearOrOutsideWall(pt.position, currentQuad, 40.0)) {
+                      final d = _distanceToQuadEdge(pt.position, currentQuad);
+                      if (d < minEdgeDist) {
+                        minEdgeDist = d;
+                        bestIdx = i;
                       }
                     }
-
-                    if (bestIdx == 0 && _wallContactPoints.length > 1) {
-                      double minEdgeDist = double.infinity;
-                      for (int k = 0; k < _wallContactPoints.length; k++) {
-                        final d = _distanceToQuadEdge(
-                            _wallContactPoints[k].position, currentQuad);
-                        if (d < minEdgeDist) {
-                          minEdgeDist = d;
-                          bestIdx = k;
-                        }
-                      }
-                    }
-
-                    final hitPos = _wallContactPoints[bestIdx].position;
-                    final hitNum = _recordedHits.length + 1;
-                    final hitAngle =
-                        maxDeflection >= 15.0 ? maxDeflection : 45.0;
-
-                    final newHit = ThudHit(
-                      number: hitNum,
-                      cameraPosition: hitPos,
-                      deflectionDegrees: hitAngle,
-                      timestamp: now,
-                    );
-
-                    _recordedHits.add(newHit);
-                    _activeSplashes.add(
-                      ActiveSplash(
-                        hitNumber: hitNum,
-                        cameraPosition: hitPos,
-                        deflectionDegrees: hitAngle,
-                      ),
-                    );
-
-                    _cooldownFrames = 10;
-                    debugPrint(
-                      '[Thud] WALL BOUNCE IMPACT #$hitNum at (${hitPos.dx.toInt()}, ${hitPos.dy.toInt()}); '
-                      'Deflection=${hitAngle.toStringAsFixed(1)}°',
-                    );
                   }
-                  _wallContactPoints.clear();
+
+                  if (bestIdx > 0) {
+                    final pFirst =
+                        validTrail[math.max(0, bestIdx - 3)].position;
+                    final pPeak = validTrail[bestIdx].position;
+
+                    final dFirst = _distanceToQuadEdge(pFirst, currentQuad);
+                    final dPeak = _distanceToQuadEdge(pPeak, currentQuad);
+                    final dLast = _distanceToQuadEdge(pLast, currentQuad);
+
+                    final dApproach = dFirst - dPeak;
+                    final dRebound = dLast - dPeak;
+
+                    final vIn = Offset(pPeak.dx - pFirst.dx, pPeak.dy - pFirst.dy);
+                    final vOut = Offset(pLast.dx - pPeak.dx, pLast.dy - pPeak.dy);
+
+                    if ((dApproach >= 4.0 || vIn.distance >= 8.0) &&
+                        (dRebound >= 3.0 || vOut.distance >= 5.0)) {
+                      final hitPos = pPeak;
+                      final hitNum = _recordedHits.length + 1;
+
+                      _recordedHits.add(
+                        ThudHit(
+                          number: hitNum,
+                          cameraPosition: hitPos,
+                          deflectionDegrees: 45.0,
+                          timestamp: now,
+                        ),
+                      );
+                      _activeSplashes.add(
+                        ActiveSplash(
+                          hitNumber: hitNum,
+                          cameraPosition: hitPos,
+                          deflectionDegrees: 45.0,
+                        ),
+                      );
+
+                      _cooldownFrames = 12;
+                      debugPrint(
+                        '[Thud] DIRECT TRAIL IMPACT #$hitNum at (${hitPos.dx.toInt()}, ${hitPos.dy.toInt()}); '
+                        'Approach=${dApproach.toStringAsFixed(1)}px, Rebound=${dRebound.toStringAsFixed(1)}px',
+                      );
+                    }
+                  }
                 }
               }
             }
@@ -423,40 +415,6 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
             // Ball lost
             if (_trail.isNotEmpty) {
               _trail.removeAt(0);
-            }
-            if (_inWallContact) {
-              _inWallContact = false;
-              if (_wallContactPoints.length >= 2 && _cooldownFrames == 0) {
-                double minEdgeDist = double.infinity;
-                int bestIdx = 0;
-                for (int k = 0; k < _wallContactPoints.length; k++) {
-                  final d = _distanceToQuadEdge(
-                      _wallContactPoints[k].position, currentQuad);
-                  if (d < minEdgeDist) {
-                    minEdgeDist = d;
-                    bestIdx = k;
-                  }
-                }
-                final hitPos = _wallContactPoints[bestIdx].position;
-                final hitNum = _recordedHits.length + 1;
-                _recordedHits.add(
-                  ThudHit(
-                    number: hitNum,
-                    cameraPosition: hitPos,
-                    deflectionDegrees: 45.0,
-                    timestamp: now,
-                  ),
-                );
-                _activeSplashes.add(
-                  ActiveSplash(
-                    hitNumber: hitNum,
-                    cameraPosition: hitPos,
-                    deflectionDegrees: 45.0,
-                  ),
-                );
-                _cooldownFrames = 10;
-              }
-              _wallContactPoints.clear();
             }
           }
         });

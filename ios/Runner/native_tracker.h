@@ -52,7 +52,8 @@ TRACKER_EXPORT DetectionResult detect_ball_yuv420(
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max,
-    int enable_motion
+    int enable_motion,
+    float min_circularity
 );
 
 // BGRA/RGBA frame detection (for iOS)
@@ -65,7 +66,8 @@ TRACKER_EXPORT DetectionResult detect_ball_rgba(
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max,
-    int enable_motion
+    int enable_motion,
+    float min_circularity
 );
 
 // Reticle Color Sampling for Screen 1 Pipette Calibrator

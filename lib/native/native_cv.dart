@@ -1,6 +1,5 @@
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:ui';
 import 'package:camera/camera.dart';
 import 'package:ffi/ffi.dart';
 
@@ -143,6 +142,7 @@ typedef _DetectBallYuv420C = DetectionResultStruct Function(
   Int32 vMin,
   Int32 vMax,
   Int32 enableMotion,
+  Float minCircularity,
 );
 
 typedef _DetectBallYuv420Dart = DetectionResultStruct Function(
@@ -161,6 +161,7 @@ typedef _DetectBallYuv420Dart = DetectionResultStruct Function(
   int vMin,
   int vMax,
   int enableMotion,
+  double minCircularity,
 );
 
 typedef _DetectBallRgbaC = DetectionResultStruct Function(
@@ -176,6 +177,7 @@ typedef _DetectBallRgbaC = DetectionResultStruct Function(
   Int32 vMin,
   Int32 vMax,
   Int32 enableMotion,
+  Float minCircularity,
 );
 
 typedef _DetectBallRgbaDart = DetectionResultStruct Function(
@@ -191,6 +193,7 @@ typedef _DetectBallRgbaDart = DetectionResultStruct Function(
   int vMin,
   int vMax,
   int enableMotion,
+  double minCircularity,
 );
 
 typedef _SampleHsvRgbaC = CalibratedHsvResultStruct Function(
@@ -327,6 +330,7 @@ class NativeTracker {
     int vMin = 60,
     int vMax = 255,
     bool enableMotion = false,
+    double minCircularity = 0.35,
   }) {
     initialize();
 
@@ -368,6 +372,7 @@ class NativeTracker {
         sMin, sMax,
         vMin, vMax,
         enableMotion ? 1 : 0,
+        minCircularity,
       );
 
       return DetectionResult(
@@ -401,6 +406,7 @@ class NativeTracker {
         sMin, sMax,
         vMin, vMax,
         enableMotion ? 1 : 0,
+        minCircularity,
       );
 
       return DetectionResult(

@@ -183,7 +183,8 @@ static DetectionResult process_bgr(
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max,
-    int enable_motion
+    int enable_motion,
+    float min_circularity
 ) {
     DetectionResult result;
     result.frame_width = width;
@@ -199,6 +200,8 @@ static DetectionResult process_bgr(
     if (bgr.empty()) {
         return result;
     }
+
+    double circularity_threshold = (min_circularity > 0.0f) ? static_cast<double>(min_circularity) : 0.35;
 
     // 1. Convert to HSV
     cv::Mat hsv;
@@ -264,9 +267,9 @@ static DetectionResult process_bgr(
             continue;
         }
 
-        // Circularity check (4 * pi * Area / Perimeter^2 >= 0.35, matching config.MIN_CIRCULARITY)
+        // Circularity check (4 * pi * Area / Perimeter^2 >= circularity_threshold)
         double circularity = (4.0 * M_PI * area) / (perimeter * perimeter);
-        if (circularity >= 0.35) {
+        if (circularity >= circularity_threshold) {
             cv::Point2f center(0.0f, 0.0f);
             float radius = 0.0f;
             cv::minEnclosingCircle(c, center, radius);
@@ -317,7 +320,8 @@ DetectionResult detect_ball_yuv420(
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max,
-    int enable_motion
+    int enable_motion,
+    float min_circularity
 ) {
     DetectionResult fallback;
     fallback.frame_width = width;
@@ -354,7 +358,7 @@ DetectionResult detect_ball_yuv420(
     cv::Mat bgr;
     cv::cvtColor(yuv_nv21, bgr, cv::COLOR_YUV2BGR_NV21);
 
-    return process_bgr(bgr, width, height, h_min, h_max, s_min, s_max, v_min, v_max, enable_motion);
+    return process_bgr(bgr, width, height, h_min, h_max, s_min, s_max, v_min, v_max, enable_motion, min_circularity);
 }
 
 DetectionResult detect_ball_rgba(
@@ -366,7 +370,8 @@ DetectionResult detect_ball_rgba(
     int h_min, int h_max,
     int s_min, int s_max,
     int v_min, int v_max,
-    int enable_motion
+    int enable_motion,
+    float min_circularity
 ) {
     DetectionResult fallback;
     fallback.frame_width = width;
@@ -386,7 +391,7 @@ DetectionResult detect_ball_rgba(
         cv::cvtColor(img, bgr, cv::COLOR_RGBA2BGR);
     }
 
-    return process_bgr(bgr, width, height, h_min, h_max, s_min, s_max, v_min, v_max, enable_motion);
+    return process_bgr(bgr, width, height, h_min, h_max, s_min, s_max, v_min, v_max, enable_motion, min_circularity);
 }
 
 static CalibratedHsvResult compute_hsv_calibration(const cv::Mat& bgr, int rx, int ry, int r_radius) {

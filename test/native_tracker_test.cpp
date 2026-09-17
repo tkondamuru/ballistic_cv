@@ -21,7 +21,7 @@ int main() {
         }
     }
     const auto detect = [&](const uint8_t* bytes, int stride) {
-        return detect_ball_rgba(bytes, width, height, 1, stride, 35, 85, 70, 255, 60, 255, 0);
+        return detect_ball_rgba(bytes, width, height, 1, stride, 35, 85, 70, 255, 60, 255, 0, 0.35f);
     };
     const auto a = detect(packed.data(), packedStride);
     const auto b = detect(padded.data(), paddedStride);
@@ -43,7 +43,7 @@ int main() {
     }
     reset_kalman_tracker();
     const auto red = detect_ball_rgba(packed.data(), width, height, 1, packedStride,
-        174, 6, 100, 255, 80, 255, 0);
+        174, 6, 100, 255, 80, 255, 0, 0.35f);
     assert(red.detected == 1);
     reset_kalman_tracker();
     assert(detect(packed.data(), packedStride).detected == 0);
