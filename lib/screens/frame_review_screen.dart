@@ -169,8 +169,22 @@ class _FrameReviewScreenState extends State<FrameReviewScreen> {
           ),
         )
         .toList();
+
+    final rawBoundary = f['boundary'] as List? ?? widget.capture.data['boundary'] as List?;
+    final boundary = rawBoundary != null
+        ? rawBoundary
+            .map(
+              (p) => Offset(
+                (p['x'] as num).toDouble(),
+                (p['y'] as num).toDouble(),
+              ),
+            )
+            .toList()
+        : null;
+    final isLocked = (f['isBoundaryLocked'] as bool?) ?? (boundary != null);
+
     final activity = widget.capture.data['activity'] as String?;
-    final isThud = activity == 'thud' || hits.isNotEmpty;
+    final isThud = activity == 'thud' || hits.isNotEmpty || boundary != null;
 
     final turns = _image!.width > _image!.height
         ? (f['orientation'] as int) ~/ 90 % 4
@@ -196,6 +210,8 @@ class _FrameReviewScreenState extends State<FrameReviewScreen> {
                           trail: trail,
                           recordedHits: hits,
                           activeSplashes: const [],
+                          arucoCorners: boundary,
+                          isBoundaryLocked: isLocked,
                           sensorOrientation: 0,
                         )
                       : TrackingPainter(
