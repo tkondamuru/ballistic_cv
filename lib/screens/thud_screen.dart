@@ -336,8 +336,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                 if (!_inWallContact) {
                   _inWallContact = true;
                   _wallContactPoints.clear();
-                  if (_trail.length >= 3) {
-                    _wallContactPoints.add(_trail[_trail.length - 3]);
+                  if (_trail.length >= 2) {
                     _wallContactPoints.add(_trail[_trail.length - 2]);
                   }
                 }
@@ -348,32 +347,36 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                   // Ball just bounced OFF the wall back into quad interior!
                   _inWallContact = false;
 
-                  if (_wallContactPoints.length >= 3 && _cooldownFrames == 0) {
-                    int bestIdx = -1;
+                  if (_wallContactPoints.isNotEmpty && _cooldownFrames == 0) {
+                    int bestIdx = 0;
                     double maxDeflection = 0.0;
 
-                    for (int k = 1; k < _wallContactPoints.length - 1; k++) {
-                      final pA = _wallContactPoints[k - 1].position;
-                      final pK = _wallContactPoints[k].position;
-                      final pB = _wallContactPoints[k + 1].position;
+                    if (_wallContactPoints.length >= 3) {
+                      for (int k = 1; k < _wallContactPoints.length - 1; k++) {
+                        final pA = _wallContactPoints[k - 1].position;
+                        final pK = _wallContactPoints[k].position;
+                        final pB = _wallContactPoints[k + 1].position;
 
-                      final vIn = Offset(pK.dx - pA.dx, pK.dy - pA.dy);
-                      final vOut = Offset(pB.dx - pK.dx, pB.dy - pK.dy);
-                      final sIn = vIn.distance;
-                      final sOut = vOut.distance;
+                        final vIn = Offset(pK.dx - pA.dx, pK.dy - pA.dy);
+                        final vOut = Offset(pB.dx - pK.dx, pB.dy - pK.dy);
+                        final sIn = vIn.distance;
+                        final sOut = vOut.distance;
 
-                      if (sIn >= 2.0 && sOut >= 2.0) {
-                        final dot = vIn.dx * vOut.dx + vIn.dy * vOut.dy;
-                        final cosTheta = (dot / (sIn * sOut)).clamp(-1.0, 1.0);
-                        final angle = math.acos(cosTheta) * (180.0 / math.pi);
-                        if (angle > maxDeflection) {
-                          maxDeflection = angle;
-                          bestIdx = k;
+                        if (sIn >= 1.5 && sOut >= 1.5) {
+                          final dot = vIn.dx * vOut.dx + vIn.dy * vOut.dy;
+                          final cosTheta =
+                              (dot / (sIn * sOut)).clamp(-1.0, 1.0);
+                          final angle =
+                              math.acos(cosTheta) * (180.0 / math.pi);
+                          if (angle > maxDeflection) {
+                            maxDeflection = angle;
+                            bestIdx = k;
+                          }
                         }
                       }
                     }
 
-                    if (bestIdx == -1) {
+                    if (bestIdx == 0 && _wallContactPoints.length > 1) {
                       double minEdgeDist = double.infinity;
                       for (int k = 0; k < _wallContactPoints.length; k++) {
                         final d = _distanceToQuadEdge(
@@ -385,34 +388,32 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                       }
                     }
 
-                    if (bestIdx >= 0 && bestIdx < _wallContactPoints.length) {
-                      final hitPos = _wallContactPoints[bestIdx].position;
-                      final hitNum = _recordedHits.length + 1;
-                      final hitAngle =
-                          maxDeflection >= 15.0 ? maxDeflection : 45.0;
+                    final hitPos = _wallContactPoints[bestIdx].position;
+                    final hitNum = _recordedHits.length + 1;
+                    final hitAngle =
+                        maxDeflection >= 15.0 ? maxDeflection : 45.0;
 
-                      final newHit = ThudHit(
-                        number: hitNum,
+                    final newHit = ThudHit(
+                      number: hitNum,
+                      cameraPosition: hitPos,
+                      deflectionDegrees: hitAngle,
+                      timestamp: now,
+                    );
+
+                    _recordedHits.add(newHit);
+                    _activeSplashes.add(
+                      ActiveSplash(
+                        hitNumber: hitNum,
                         cameraPosition: hitPos,
                         deflectionDegrees: hitAngle,
-                        timestamp: now,
-                      );
+                      ),
+                    );
 
-                      _recordedHits.add(newHit);
-                      _activeSplashes.add(
-                        ActiveSplash(
-                          hitNumber: hitNum,
-                          cameraPosition: hitPos,
-                          deflectionDegrees: hitAngle,
-                        ),
-                      );
-
-                      _cooldownFrames = 10;
-                      debugPrint(
-                        '[Thud] WALL BOUNCE IMPACT #$hitNum at (${hitPos.dx.toInt()}, ${hitPos.dy.toInt()}); '
-                        'Deflection=${hitAngle.toStringAsFixed(1)}°',
-                      );
-                    }
+                    _cooldownFrames = 10;
+                    debugPrint(
+                      '[Thud] WALL BOUNCE IMPACT #$hitNum at (${hitPos.dx.toInt()}, ${hitPos.dy.toInt()}); '
+                      'Deflection=${hitAngle.toStringAsFixed(1)}°',
+                    );
                   }
                   _wallContactPoints.clear();
                 }
