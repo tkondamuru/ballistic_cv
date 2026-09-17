@@ -327,74 +327,8 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
               _trail.removeAt(0);
             }
 
-            // Wall Collision & Impact Deflection Logic (Sharp V-Bounce & Wall Edge Exit)
+            // Wall Collision & Impact Deflection Logic (Triggered on Wall Exit)
             if (_isBoundaryLocked) {
-              // 1. Real-Time Sharp V-Impact Deflection (e.g. Sharp bounce off target surface inside quad)
-              if (_trail.length >= 5 &&
-                  _cooldownFrames == 0 &&
-                  !detection.isPredicted &&
-                  _isPointInsideQuad(currentPos, currentQuad)) {
-                final idxK = _trail.length - 3;
-                final pA = _trail[idxK - 2].position;
-                final pK = _trail[idxK].position;
-                final pB = _trail[idxK + 2].position;
-
-                final vIn = Offset(pK.dx - pA.dx, pK.dy - pA.dy);
-                final vOut = Offset(pB.dx - pK.dx, pB.dy - pK.dy);
-                final sIn = vIn.distance;
-                final sOut = vOut.distance;
-
-                if (sIn >= 3.0 && sOut >= 3.0) {
-                  final dot = vIn.dx * vOut.dx + vIn.dy * vOut.dy;
-                  final cosTheta = (dot / (sIn * sOut)).clamp(-1.0, 1.0);
-                  final deflectionAngleDeg =
-                      math.acos(cosTheta) * (180.0 / math.pi);
-
-                  final pA0 = _trail[idxK - 3].position;
-                  final pK0 = _trail[idxK - 1].position;
-                  final pB0 = _trail[idxK + 1].position;
-                  final vIn0 = Offset(pK0.dx - pA0.dx, pK0.dy - pA0.dy);
-                  final vOut0 = Offset(pB0.dx - pK0.dx, pB0.dy - pK0.dy);
-                  final sIn0 = vIn0.distance;
-                  final sOut0 = vOut0.distance;
-                  double anglePrev = 0.0;
-                  if (sIn0 >= 3.0 && sOut0 >= 3.0) {
-                    final dot0 = vIn0.dx * vOut0.dx + vIn0.dy * vOut0.dy;
-                    final cosTheta0 = (dot0 / (sIn0 * sOut0)).clamp(-1.0, 1.0);
-                    anglePrev = math.acos(cosTheta0) * (180.0 / math.pi);
-                  }
-
-                  if (deflectionAngleDeg >= 25.0 &&
-                      deflectionAngleDeg >= anglePrev) {
-                    final hitNum = _recordedHits.length + 1;
-                    final hitPos = pK;
-
-                    _recordedHits.add(
-                      ThudHit(
-                        number: hitNum,
-                        cameraPosition: hitPos,
-                        deflectionDegrees: deflectionAngleDeg,
-                        timestamp: now,
-                      ),
-                    );
-                    _activeSplashes.add(
-                      ActiveSplash(
-                        hitNumber: hitNum,
-                        cameraPosition: hitPos,
-                        deflectionDegrees: deflectionAngleDeg,
-                      ),
-                    );
-
-                    _cooldownFrames = 10;
-                    debugPrint(
-                      '[Thud] SHARP IMPACT DEFLECTION #$hitNum detected at (${pK.dx.toInt()}, ${pK.dy.toInt()}); '
-                      'Angle=${deflectionAngleDeg.toStringAsFixed(1)}°',
-                    );
-                  }
-                }
-              }
-
-              // 2. Outer Quad Boundary Edge Contact Tracking
               final bool touchingWall =
                   _isNearOrOutsideWall(currentPos, currentQuad, 40.0);
 
