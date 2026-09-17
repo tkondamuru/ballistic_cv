@@ -270,9 +270,9 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         Offset(imgW * 0.85, imgH * 0.85),
         Offset(imgW * 0.15, imgH * 0.85),
       ];
-      final bool nearWall = _trail.isNotEmpty &&
-          _isNearOrOutsideWall(_trail.last.position, currentQuad, 25.0);
-      final double circularityThreshold = nearWall ? 0.15 : 0.35;
+      final bool inOrNearBoard = _trail.isNotEmpty &&
+          _isNearOrOutsideWall(_trail.last.position, currentQuad, 40.0);
+      final double circularityThreshold = inOrNearBoard ? 0.0 : 0.35;
 
       final detection = NativeTracker.instance.detectFromCameraImage(
         image,

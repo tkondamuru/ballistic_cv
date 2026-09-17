@@ -201,7 +201,7 @@ static DetectionResult process_bgr(
         return result;
     }
 
-    double circularity_threshold = (min_circularity > 0.0f) ? static_cast<double>(min_circularity) : 0.35;
+    double circularity_threshold = (min_circularity >= 0.0f) ? static_cast<double>(min_circularity) : 0.35;
 
     // 1. Convert to HSV
     cv::Mat hsv;
