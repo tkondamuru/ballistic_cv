@@ -271,7 +271,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         Offset(imgW * 0.15, imgH * 0.85),
       ];
       final bool nearWall = _trail.isNotEmpty &&
-          _isNearOrOutsideWall(_trail.last.position, currentQuad, 50.0);
+          _isNearOrOutsideWall(_trail.last.position, currentQuad, 25.0);
       final double circularityThreshold = nearWall ? 0.15 : 0.35;
 
       final detection = NativeTracker.instance.detectFromCameraImage(
@@ -343,20 +343,18 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
 
               if (validTrail.length >= 3) {
                 final bool currentlyNearWall =
-                    _isNearOrOutsideWall(currentPos, currentQuad, 40.0);
+                    _isNearOrOutsideWall(currentPos, currentQuad, 20.0);
 
                 if (!currentlyNearWall && validTrail.length >= 4) {
                   final pLast = validTrail.last.position;
 
                   int bestIdx = -1;
                   double minEdgeDist = double.infinity;
-                  final searchCount = math.min(10, validTrail.length - 1);
 
-                  for (int i = validTrail.length - searchCount;
-                      i < validTrail.length - 1;
-                      i++) {
+                  // Search full validTrail history for the point closest to the wall edge
+                  for (int i = 0; i < validTrail.length - 1; i++) {
                     final pt = validTrail[i];
-                    if (_isNearOrOutsideWall(pt.position, currentQuad, 40.0)) {
+                    if (_isNearOrOutsideWall(pt.position, currentQuad, 20.0)) {
                       final d = _distanceToQuadEdge(pt.position, currentQuad);
                       if (d < minEdgeDist) {
                         minEdgeDist = d;
