@@ -10,6 +10,7 @@ import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
 import '../widgets/thud_painter.dart';
 import '../widgets/tracking_painter.dart';
+import '../widgets/zoom_button.dart';
 
 class ThudScreen extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -34,6 +35,9 @@ class ThudScreen extends StatefulWidget {
 class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   CameraController? _controller;
   final FrameCapture _capture = FrameCapture();
+  double _minZoom = 1, _maxZoom = 1, _zoom = 1;
+  bool _zoomBusy = false;
+  SharedPreferences? _zoomPreferences;
   bool _isProcessing = false;
   DetectionResult? _lastDetection;
 
@@ -109,15 +113,16 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     try {
       await controller.initialize();
       try {
-        final minZoom = await controller.getMinZoomLevel();
-        final maxZoom = await controller.getMaxZoomLevel();
-        final preferences = await SharedPreferences.getInstance();
-        final zoom = (preferences.getDouble('play_zoom') ?? 1.0).clamp(
-          minZoom,
-          maxZoom,
+        _minZoom = await controller.getMinZoomLevel();
+        _maxZoom = await controller.getMaxZoomLevel();
+        _zoomPreferences = await SharedPreferences.getInstance();
+        _zoom = (_zoomPreferences!.getDouble('play_zoom') ?? 1.0).clamp(
+          _minZoom,
+          _maxZoom,
         );
-        await controller.setZoomLevel(zoom);
+        await controller.setZoomLevel(_zoom);
       } catch (e) {
+        _minZoom = _maxZoom = _zoom = 1;
         debugPrint('Zoom setup error in ThudScreen: $e');
       }
 
@@ -133,6 +138,34 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
       await controller.startImageStream(_processCameraFrame);
     } catch (e) {
       debugPrint('Error initializing camera controller: $e');
+    }
+  }
+
+  Future<void> _stepZoom(int direction) async {
+    final controller = _controller;
+    if (_zoomBusy || controller == null) return;
+    final value = ((_zoom * 10).round() + direction) / 10;
+    final next = value.clamp(_minZoom, _maxZoom);
+    setState(() => _zoomBusy = true);
+    try {
+      await controller.setZoomLevel(next);
+      if (mounted) setState(() => _zoom = next);
+      final preferences =
+          _zoomPreferences ?? await SharedPreferences.getInstance();
+      if (!await preferences.setDouble('play_zoom', next)) {
+        throw StateError('Could not save zoom');
+      }
+    } catch (e) {
+      debugPrint('Could not set or save zoom: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not change or save zoom. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _zoomBusy = false);
     }
   }
 
@@ -711,7 +744,52 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
               ),
             ),
 
-            // 4. 10-Second Frame Capture Floating Button
+            // 4. Zoom Controls Floating Widget (Bottom-Left)
+            Positioned(
+              left: 16,
+              bottom: 90,
+              child: Container(
+                key: const ValueKey('thudZoomControls'),
+                width: 140,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  children: [
+                    ZoomButton(
+                      label: 'Decrease zoom',
+                      onStep: hasCamera && _zoom > _minZoom
+                          ? () => _stepZoom(-1)
+                          : null,
+                      icon: Icons.chevron_left,
+                    ),
+                    Expanded(
+                      child: Text(
+                        '${_zoom.toStringAsFixed(1)}×',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    ZoomButton(
+                      label: 'Increase zoom',
+                      onStep: hasCamera && _zoom < _maxZoom
+                          ? () => _stepZoom(1)
+                          : null,
+                      icon: Icons.chevron_right,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // 5. 10-Second Frame Capture Floating Button
             if (Platform.isIOS)
               Positioned(
                 right: 18,
