@@ -262,7 +262,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     _isProcessing = true;
 
     try {
-      final double circularityThreshold = _isBoundaryLocked ? 0.0 : 0.35;
+      final double circularityThreshold = _isBoundaryLocked ? 0.08 : 0.35;
 
       final detection = NativeTracker.instance.detectFromCameraImage(
         image,
@@ -339,16 +339,39 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                   final pLast = validTrail.last.position;
 
                   int bestIdx = -1;
-                  double minEdgeDist = double.infinity;
+                  double minApexDist = double.infinity;
 
-                  // Search full validTrail history for the point closest to the wall edge
-                  for (int i = 0; i < validTrail.length - 1; i++) {
+                  // Find Trajectory Inflection Vertex (where normal distance stops decreasing and starts increasing)
+                  for (int i = 1; i < validTrail.length - 1; i++) {
                     final pt = validTrail[i];
-                    if (_isNearOrOutsideWall(pt.position, currentQuad, 20.0)) {
-                      final d = _distanceToQuadEdge(pt.position, currentQuad);
-                      if (d < minEdgeDist) {
-                        minEdgeDist = d;
-                        bestIdx = i;
+                    if (_isNearOrOutsideWall(pt.position, currentQuad, 25.0)) {
+                      final dPrev =
+                          _distanceToQuadEdge(validTrail[i - 1].position, currentQuad);
+                      final dCurr =
+                          _distanceToQuadEdge(pt.position, currentQuad);
+                      final dNext =
+                          _distanceToQuadEdge(validTrail[i + 1].position, currentQuad);
+
+                      // Check if point is a local inflection vertex (d stops decreasing and starts increasing)
+                      if (dPrev >= dCurr && dNext > dCurr) {
+                        if (dCurr < minApexDist) {
+                          minApexDist = dCurr;
+                          bestIdx = i;
+                        }
+                      }
+                    }
+                  }
+
+                  // Fallback to min edge distance if explicit sign flip is subtle
+                  if (bestIdx == -1) {
+                    for (int i = 0; i < validTrail.length - 1; i++) {
+                      final pt = validTrail[i];
+                      if (_isNearOrOutsideWall(pt.position, currentQuad, 20.0)) {
+                        final d = _distanceToQuadEdge(pt.position, currentQuad);
+                        if (d < minApexDist) {
+                          minApexDist = d;
+                          bestIdx = i;
+                        }
                       }
                     }
                   }
