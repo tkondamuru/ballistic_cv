@@ -217,7 +217,7 @@ class ThudPainter extends CustomPainter {
       canvas.drawCircle(sCenter, rad * 0.7, shockwavePaint2);
     }
 
-    // 5. Draw Ordered Boundary Quad Overlay (bright green when locked, orange when editing)
+    // 5. Draw Ordered Boundary Quad Overlay (bright green when locked, glowing amber when wall contact, orange when editing)
     if (arucoCorners != null && arucoCorners!.length == 4) {
       final ordered = orderArUcoCorners(arucoCorners!);
       final screenQuad = ordered.map((c) => toScreenOffset(c.dx, c.dy)).toList();
@@ -229,20 +229,81 @@ class ThudPainter extends CustomPainter {
         ..lineTo(screenQuad[3].dx, screenQuad[3].dy)
         ..close();
 
-      final quadColor = isBoundaryLocked ? const Color(0xFF00FF66) : Colors.orangeAccent;
+      bool inWallZone = false;
+      if (isBoundaryLocked && detection != null && detection!.detected) {
+        final pos = Offset(detection!.x, detection!.y);
+        inWallZone = _isNearOrOutsideQuad(pos, arucoCorners!, 35.0);
+      }
+
+      final Color baseQuadColor = isBoundaryLocked
+          ? (inWallZone ? const Color(0xFFFFCC00) : const Color(0xFF00FF66))
+          : Colors.orangeAccent;
+
+      if (inWallZone) {
+        // Outer Glow when ball is in wall zone
+        final glowPaint = Paint()
+          ..color = baseQuadColor.withValues(alpha: 0.6)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 10.0
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+        canvas.drawPath(quadPath, glowPaint);
+      }
 
       final quadPaint = Paint()
-        ..color = quadColor
+        ..color = baseQuadColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isBoundaryLocked ? 3.0 : 2.5;
+        ..strokeWidth = isBoundaryLocked ? (inWallZone ? 4.5 : 3.0) : 2.5;
 
       final fillPaint = Paint()
-        ..color = quadColor.withValues(alpha: isBoundaryLocked ? 0.12 : 0.06)
+        ..color = baseQuadColor.withValues(alpha: isBoundaryLocked ? (inWallZone ? 0.22 : 0.12) : 0.06)
         ..style = PaintingStyle.fill;
 
       canvas.drawPath(quadPath, fillPaint);
       canvas.drawPath(quadPath, quadPaint);
+
+      // On-screen Status Badge when in Wall Contact Zone
+      if (inWallZone) {
+        final textSpan = TextSpan(
+          text: '★ WALL ZONE CONTACT ★',
+          style: TextStyle(
+            color: const Color(0xFFFFCC00),
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+            shadows: const [
+              Shadow(color: Colors.black, blurRadius: 6),
+            ],
+          ),
+        );
+        final tp = TextPainter(
+          text: textSpan,
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset((size.width - tp.width) / 2, 45.0));
+      }
     }
+  }
+
+  bool _isNearOrOutsideQuad(Offset p, List<Offset> quad, double thresholdPx) {
+    if (quad.length != 4) return false;
+    double minDistance = double.infinity;
+    for (int i = 0; i < 4; i++) {
+      final a = quad[i];
+      final b = quad[(i + 1) % 4];
+      final ab = b - a;
+      final ap = p - a;
+      final lengthSq = ab.dx * ab.dx + ab.dy * ab.dy;
+      double d = 0.0;
+      if (lengthSq == 0) {
+        d = ap.distance;
+      } else {
+        final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / lengthSq).clamp(0.0, 1.0);
+        final proj = a + ab * t;
+        d = (p - proj).distance;
+      }
+      if (d < minDistance) minDistance = d;
+    }
+    return minDistance <= thresholdPx;
   }
 
   @override
