@@ -123,128 +123,139 @@ class CalibratedHsvResult {
 typedef _GetVersionC = Int32 Function();
 typedef _GetVersionDart = int Function();
 
+typedef _SetCutoffC = Void Function(Float, Float, Float);
+typedef _SetCutoffDart = void Function(double, double, double);
+
 typedef _ResetKalmanTrackerC = Void Function();
 typedef _ResetKalmanTrackerDart = void Function();
 
-typedef _DetectBallYuv420C = DetectionResultStruct Function(
-  Pointer<Uint8> yPlane,
-  Pointer<Uint8> uPlane,
-  Pointer<Uint8> vPlane,
-  Int32 width,
-  Int32 height,
-  Int32 yRowStride,
-  Int32 uvRowStride,
-  Int32 uvPixelStride,
-  Int32 hMin,
-  Int32 hMax,
-  Int32 sMin,
-  Int32 sMax,
-  Int32 vMin,
-  Int32 vMax,
-  Int32 enableMotion,
-  Float minCircularity,
-);
+typedef _DetectBallYuv420C =
+    DetectionResultStruct Function(
+      Pointer<Uint8> yPlane,
+      Pointer<Uint8> uPlane,
+      Pointer<Uint8> vPlane,
+      Int32 width,
+      Int32 height,
+      Int32 yRowStride,
+      Int32 uvRowStride,
+      Int32 uvPixelStride,
+      Int32 hMin,
+      Int32 hMax,
+      Int32 sMin,
+      Int32 sMax,
+      Int32 vMin,
+      Int32 vMax,
+      Int32 enableMotion,
+      Float minCircularity,
+    );
 
-typedef _DetectBallYuv420Dart = DetectionResultStruct Function(
-  Pointer<Uint8> yPlane,
-  Pointer<Uint8> uPlane,
-  Pointer<Uint8> vPlane,
-  int width,
-  int height,
-  int yRowStride,
-  int uvRowStride,
-  int uvPixelStride,
-  int hMin,
-  int hMax,
-  int sMin,
-  int sMax,
-  int vMin,
-  int vMax,
-  int enableMotion,
-  double minCircularity,
-);
+typedef _DetectBallYuv420Dart =
+    DetectionResultStruct Function(
+      Pointer<Uint8> yPlane,
+      Pointer<Uint8> uPlane,
+      Pointer<Uint8> vPlane,
+      int width,
+      int height,
+      int yRowStride,
+      int uvRowStride,
+      int uvPixelStride,
+      int hMin,
+      int hMax,
+      int sMin,
+      int sMax,
+      int vMin,
+      int vMax,
+      int enableMotion,
+      double minCircularity,
+    );
 
-typedef _DetectBallRgbaC = DetectionResultStruct Function(
-  Pointer<Uint8> rgbaBytes,
-  Int32 width,
-  Int32 height,
-  Int32 isBgra,
-  Int32 rowStride,
-  Int32 hMin,
-  Int32 hMax,
-  Int32 sMin,
-  Int32 sMax,
-  Int32 vMin,
-  Int32 vMax,
-  Int32 enableMotion,
-  Float minCircularity,
-);
+typedef _DetectBallRgbaC =
+    DetectionResultStruct Function(
+      Pointer<Uint8> rgbaBytes,
+      Int32 width,
+      Int32 height,
+      Int32 isBgra,
+      Int32 rowStride,
+      Int32 hMin,
+      Int32 hMax,
+      Int32 sMin,
+      Int32 sMax,
+      Int32 vMin,
+      Int32 vMax,
+      Int32 enableMotion,
+      Float minCircularity,
+    );
 
-typedef _DetectBallRgbaDart = DetectionResultStruct Function(
-  Pointer<Uint8> rgbaBytes,
-  int width,
-  int height,
-  int isBgra,
-  int rowStride,
-  int hMin,
-  int hMax,
-  int sMin,
-  int sMax,
-  int vMin,
-  int vMax,
-  int enableMotion,
-  double minCircularity,
-);
+typedef _DetectBallRgbaDart =
+    DetectionResultStruct Function(
+      Pointer<Uint8> rgbaBytes,
+      int width,
+      int height,
+      int isBgra,
+      int rowStride,
+      int hMin,
+      int hMax,
+      int sMin,
+      int sMax,
+      int vMin,
+      int vMax,
+      int enableMotion,
+      double minCircularity,
+    );
 
-typedef _SampleHsvRgbaC = CalibratedHsvResultStruct Function(
-  Pointer<Uint8> rgbaBytes,
-  Int32 width,
-  Int32 height,
-  Int32 isBgra,
-  Int32 rowStride,
-  Int32 reticleX,
-  Int32 reticleY,
-  Int32 reticleRadius,
-);
+typedef _SampleHsvRgbaC =
+    CalibratedHsvResultStruct Function(
+      Pointer<Uint8> rgbaBytes,
+      Int32 width,
+      Int32 height,
+      Int32 isBgra,
+      Int32 rowStride,
+      Int32 reticleX,
+      Int32 reticleY,
+      Int32 reticleRadius,
+    );
 
-typedef _SampleHsvRgbaDart = CalibratedHsvResultStruct Function(
-  Pointer<Uint8> rgbaBytes,
-  int width,
-  int height,
-  int isBgra,
-  int rowStride,
-  int reticleX,
-  int reticleY,
-  int reticleRadius,
-);
+typedef _SampleHsvRgbaDart =
+    CalibratedHsvResultStruct Function(
+      Pointer<Uint8> rgbaBytes,
+      int width,
+      int height,
+      int isBgra,
+      int rowStride,
+      int reticleX,
+      int reticleY,
+      int reticleRadius,
+    );
 
-typedef _SampleHsvYuv420C = CalibratedHsvResultStruct Function(
-  Pointer<Uint8> yPlane,
-  Pointer<Uint8> uPlane,
-  Pointer<Uint8> vPlane,
-  Int32 width,
-  Int32 height,
-  Int32 yRowStride,
-  Int32 uvRowStride,
-  Int32 uvPixelStride,
-  Int32 reticleX,
-  Int32 reticleY,
-  Int32 reticleRadius,
-);
+typedef _SampleHsvYuv420C =
+    CalibratedHsvResultStruct Function(
+      Pointer<Uint8> yPlane,
+      Pointer<Uint8> uPlane,
+      Pointer<Uint8> vPlane,
+      Int32 width,
+      Int32 height,
+      Int32 yRowStride,
+      Int32 uvRowStride,
+      Int32 uvPixelStride,
+      Int32 reticleX,
+      Int32 reticleY,
+      Int32 reticleRadius,
+    );
 
-typedef _SampleHsvYuv420Dart = CalibratedHsvResultStruct Function(
-  Pointer<Uint8> yPlane,
-  Pointer<Uint8> uPlane,
-  Pointer<Uint8> vPlane,
-  int width,
-  int height,
-  int yRowStride,
-  int uvRowStride,
-  int uvPixelStride,
-  int reticleX,
-  int reticleY,
-  int reticleRadius,
-);
+typedef _SampleHsvYuv420Dart =
+    CalibratedHsvResultStruct Function(
+      Pointer<Uint8> yPlane,
+      Pointer<Uint8> uPlane,
+      Pointer<Uint8> vPlane,
+      int width,
+      int height,
+      int yRowStride,
+      int uvRowStride,
+      int uvPixelStride,
+      int reticleX,
+      int reticleY,
+      int reticleRadius,
+    );
 
 class NativeTracker {
   static final NativeTracker instance = NativeTracker._internal();
@@ -252,6 +263,7 @@ class NativeTracker {
   late final DynamicLibrary _lib;
   late final _GetVersionDart _getVersion;
   late final _ResetKalmanTrackerDart _resetKalman;
+  late final _SetCutoffDart _setCutoff;
   late final _DetectBallYuv420Dart _detectBallYuv420;
   late final _DetectBallRgbaDart _detectBallRgba;
   late final _SampleHsvRgbaDart _sampleHsvRgba;
@@ -281,12 +293,18 @@ class NativeTracker {
     } else if (Platform.isIOS) {
       _lib = DynamicLibrary.process();
     } else {
-      throw UnsupportedError('NativeTracker is only supported on Android and iOS.');
+      throw UnsupportedError(
+        'NativeTracker is only supported on Android and iOS.',
+      );
     }
 
     _getVersion = _lib
         .lookup<NativeFunction<_GetVersionC>>('get_tracker_version')
         .asFunction<_GetVersionDart>();
+
+    _setCutoff = _lib.lookupFunction<_SetCutoffC, _SetCutoffDart>(
+      'set_tracking_cutoff',
+    );
 
     _resetKalman = _lib
         .lookup<NativeFunction<_ResetKalmanTrackerC>>('reset_kalman_tracker')
@@ -331,10 +349,13 @@ class NativeTracker {
     int vMax = 255,
     bool enableMotion = false,
     double minCircularity = 0.35,
+    List<double>? cutoff,
   }) {
     initialize();
+    _setCutoff(cutoff?[0] ?? 0, cutoff?[1] ?? 0, cutoff?[2] ?? 0);
 
-    if (image.format.group == ImageFormatGroup.yuv420 && image.planes.length >= 3) {
+    if (image.format.group == ImageFormatGroup.yuv420 &&
+        image.planes.length >= 3) {
       final yPlane = image.planes[0];
       final uPlane = image.planes[1];
       final vPlane = image.planes[2];
@@ -368,9 +389,12 @@ class NativeTracker {
         yPlane.bytesPerRow,
         uPlane.bytesPerRow,
         uPlane.bytesPerPixel ?? 1,
-        hMin, hMax,
-        sMin, sMax,
-        vMin, vMax,
+        hMin,
+        hMax,
+        sMin,
+        sMax,
+        vMin,
+        vMax,
         enableMotion ? 1 : 0,
         minCircularity,
       );
@@ -386,7 +410,8 @@ class NativeTracker {
         frameWidth: struct.frameWidth,
         frameHeight: struct.frameHeight,
       );
-    } else if (image.format.group == ImageFormatGroup.bgra8888 || image.planes.length == 1) {
+    } else if (image.format.group == ImageFormatGroup.bgra8888 ||
+        image.planes.length == 1) {
       final plane = image.planes[0];
       if (_rgbaBuffer == null || _rgbaBufferSize < plane.bytes.length) {
         if (_rgbaBuffer != null) malloc.free(_rgbaBuffer!);
@@ -402,9 +427,12 @@ class NativeTracker {
         image.height,
         isBgra,
         plane.bytesPerRow,
-        hMin, hMax,
-        sMin, sMax,
-        vMin, vMax,
+        hMin,
+        hMax,
+        sMin,
+        sMax,
+        vMin,
+        vMax,
         enableMotion ? 1 : 0,
         minCircularity,
       );
@@ -433,7 +461,8 @@ class NativeTracker {
   }) {
     initialize();
 
-    if (image.format.group == ImageFormatGroup.yuv420 && image.planes.length >= 3) {
+    if (image.format.group == ImageFormatGroup.yuv420 &&
+        image.planes.length >= 3) {
       final yPlane = image.planes[0];
       final uPlane = image.planes[1];
       final vPlane = image.planes[2];
@@ -473,12 +502,18 @@ class NativeTracker {
       );
 
       return CalibratedHsvResult(
-        hMed: res.hMed, sMed: res.sMed, vMed: res.vMed,
-        hMin: res.hMin, hMax: res.hMax,
-        sMin: res.sMin, sMax: res.sMax,
-        vMin: res.vMin, vMax: res.vMax,
+        hMed: res.hMed,
+        sMed: res.sMed,
+        vMed: res.vMed,
+        hMin: res.hMin,
+        hMax: res.hMax,
+        sMin: res.sMin,
+        sMax: res.sMax,
+        vMin: res.vMin,
+        vMax: res.vMax,
       );
-    } else if (image.format.group == ImageFormatGroup.bgra8888 || image.planes.length == 1) {
+    } else if (image.format.group == ImageFormatGroup.bgra8888 ||
+        image.planes.length == 1) {
       final plane = image.planes[0];
       if (_rgbaBuffer == null || _rgbaBufferSize < plane.bytes.length) {
         if (_rgbaBuffer != null) malloc.free(_rgbaBuffer!);
@@ -500,18 +535,28 @@ class NativeTracker {
       );
 
       return CalibratedHsvResult(
-        hMed: res.hMed, sMed: res.sMed, vMed: res.vMed,
-        hMin: res.hMin, hMax: res.hMax,
-        sMin: res.sMin, sMax: res.sMax,
-        vMin: res.vMin, vMax: res.vMax,
+        hMed: res.hMed,
+        sMed: res.sMed,
+        vMed: res.vMed,
+        hMin: res.hMin,
+        hMax: res.hMax,
+        sMin: res.sMin,
+        sMax: res.sMax,
+        vMin: res.vMin,
+        vMax: res.vMax,
       );
     }
 
     return const CalibratedHsvResult(
-      hMed: 0, sMed: 0, vMed: 0,
-      hMin: 35, hMax: 85,
-      sMin: 70, sMax: 255,
-      vMin: 60, vMax: 255,
+      hMed: 0,
+      sMed: 0,
+      vMed: 0,
+      hMin: 35,
+      hMax: 85,
+      sMin: 70,
+      sMax: 255,
+      vMin: 60,
+      vMax: 255,
     );
   }
 

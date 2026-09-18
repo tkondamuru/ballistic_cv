@@ -1,6 +1,43 @@
 # BallisticCV implementation status
 
-Updated: 2026-09-14. Compared against [SPEC.md](SPEC.md) and the current working tree.
+Verification: 38 Flutter tests, 4 Python replay tests, native tracker and frame
+storage checks passed; signed iOS release build passed. Full analysis reports
+only the existing frame_review_screen.dart null-aware-operator info lint.
+
+Latest threshold update: minimum turn is now 30° (previously 35°). All other
+impact gates are unchanged. The recorder reads the shared angle constant. Replay
+of the 20-hit session recovers the two missed 30.4°/31.5° turns at 30°/3px;
+historical analysis files below retain their recorded 35° settings. README now
+documents navigation, zoom, board persistence, lower-edge filtering, impact
+detection, console capture, coordinate export, and reusable offline analysis.
+
+Offline trajectory recording (2026-09-18): Debug can start a coordinate-only
+Thud session, stop with an optional actual-hit count, and share saved JSONL files
+through the iOS share sheet (including Save to Files/AirDrop). Sessions persist
+on the phone without a connected Mac and include board/zoom, measured/predicted/
+lost positions, inside-board flags, timestamps, and impact candidates. Outside
+samples are retained to replay entry/rebound/exit. Bounded batched writes report
+drops; recording auto-saves on app inactivity or after 10 minutes. No images are
+recorded by this feature. All 37 Flutter tests and changed-file analysis passed;
+production Swift storage passed a native start/append/finish/list/JSON test. Signed
+iOS release built and installed on the connected iPhone. Share-sheet interaction
+and a physical throwing session still need user validation.
+
+Impact correction (2026-09-18): Thud uses three consecutive measured positions
+A → B → C and marks B as soon as C arrives. Only B must be inside the locked
+board. Gates: turn ≥35°, each leg ≥3 image pixels and ≥60 pixels/second,
+inter-sample gap ≤80 ms, and 180 ms duplicate cooldown. Prediction/loss resets
+the window. The earlier seven-sample straightness/acceleration gates were removed.
+Console diagnostics now forward via native stderr; timestamped startup messages
+verify capture before a scan. ScanTrace logs all processed samples, board/ball
+coordinates, region, sample timestamps, and stored-frame mappings.
+Three additional missed-turn coordinate regressions pass at 35°/3px.
+Both earlier captured turns pass replay once: first near frame 86 (~83°), second at frame
+151 confirmed on 152 (~61°). All 31 Flutter tests passed; changed-file analysis
+passed. Native tracking is unchanged. Three-point turns remain impact candidates,
+not proof of contact, and may admit more noise or fast arc false positives.
+Zoom changes invalidate the board alignment. Full analysis has a pre-existing
+null-aware-operator lint in frame_review_screen.dart.
 
 Latest UI update (2026-09-14): Activities has a single “Your activities” header.
 Play uses fixed-width zoom arrows, with 0.1× steps, long-press repetition, and

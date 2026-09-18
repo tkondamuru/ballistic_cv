@@ -1,0 +1,35 @@
+Samples: 3592 | states: {'searching': 2816, 'measured': 486, 'predicted': 290}
+Actual hits: 20 | recorded: 18 | replay: 18
+Replay timestamps match app: True | dropped: 0
+Hit  Pivot  Confirm  Time(s)  Angle   Legs(px)
+  1    409      410    9.234   55.3   6.1/4.9
+  2    485      486   10.499   59.1   6.9/5.0
+  3    560      561   11.747   41.9   9.9/6.4
+  4    716      717   14.346   37.9  10.9/5.6
+  5    794      795   15.646   57.1   5.7/4.4
+  6    874      875   16.982   48.2   9.2/5.0
+  7    953      954   18.297   38.2   8.2/6.4
+  8   1109     1110   20.901   47.4   7.0/5.1
+  9   1188     1189   22.213   52.7   6.7/5.9
+ 10   1500     1501   27.413   35.1   6.0/6.1
+ 11   1798     1799   32.382   38.6   9.7/6.9
+ 12   2024     2025   36.147   52.9  10.1/5.6
+ 13   2297     2298   40.696   49.7   5.5/4.3
+ 14   2724     2725   47.814   45.0  10.4/6.2
+ 15   2928     2929   51.213   45.6   7.3/6.7
+ 16   3167     3168   55.196   37.7   9.4/6.1
+ 17   3239     3240   56.394   43.1   5.5/5.5
+ 18   3317     3318   57.694   43.4   6.9/6.2
+Sensitivity (counts alone do not establish accuracy):
+  25 degrees / 2 px: 20 candidates
+  25 degrees / 3 px: 20 candidates
+  30 degrees / 2 px: 20 candidates
+  30 degrees / 3 px: 20 candidates
+  35 degrees / 2 px: 18 candidates
+  35 degrees / 3 px: 18 candidates
+  40 degrees / 2 px: 14 candidates
+  40 degrees / 3 px: 14 candidates
+Board visits without a detected hit (not necessarily missed throws):
+  samples 1028–1038 / 19.55–19.72s / 11 measured
+  samples 2212–2221 / 39.28–39.43s / 10 measured
+Reports: /Users/tejasvikondamuru/ballistic_cv/reports/thud-2026-09-18

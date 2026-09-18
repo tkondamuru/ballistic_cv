@@ -36,6 +36,27 @@ int main() {
     std::vector<uint8_t> black(packedStride * height, 0);
     reset_kalman_tracker();
     assert(detect(black.data(), packedStride).detected == 0);
+    // Reject a larger same-color table patch before scoring/Kalman correction.
+    auto competing = black;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if ((x-48)*(x-48)+(y-20)*(y-20) <= 8*8 ||
+                (x-48)*(x-48)+(y-60)*(y-60) <= 13*13) {
+                competing[y*packedStride+x*4+1] = 255;
+                competing[y*packedStride+x*4+3] = 255;
+            }
+        }
+    }
+    reset_kalman_tracker();
+    set_tracking_cutoff(0, -1, 35); // Accept centers above y=35.
+    const auto upper = detect(competing.data(), packedStride);
+    assert(upper.detected && !upper.is_predicted && std::abs(upper.y-20) < 1);
+    reset_kalman_tracker();
+    assert(!detect(padded.data(), paddedStride).detected); // only y=40 ball
+    set_tracking_cutoff(0, 0, 0);
+    reset_kalman_tracker();
+    const auto lower = detect(competing.data(), packedStride);
+    assert(lower.detected && std::abs(lower.y-60) < 1);
     // Change the synthetic green ball to red and verify wrapped hue limits.
     for (size_t i = 0; i < packed.size(); i += 4) {
         packed[i + 2] = packed[i + 1];

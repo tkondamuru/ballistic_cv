@@ -36,6 +36,8 @@ int get_tracker_version();
 
 // Reset Kalman filter and motion tracking history
 void reset_kalman_tracker();
+// Candidate center must satisfy a*x + b*y + c >= 0; zeros disable.
+void set_tracking_cutoff(float a, float b, float c);
 
 // Android CameraImage YUV420_888 frame detection
 DetectionResult detect_ball_yuv420(

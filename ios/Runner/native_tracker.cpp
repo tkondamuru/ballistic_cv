@@ -6,6 +6,12 @@
 #include <cstring>
 #include <algorithm>
 
+// Set per frame by Dart, including zeros for activities without a cutoff.
+static float cutoff_a = 0, cutoff_b = 0, cutoff_c = 0;
+void set_tracking_cutoff(float a, float b, float c) {
+    cutoff_a = a; cutoff_b = b; cutoff_c = c;
+}
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -273,6 +279,10 @@ static DetectionResult process_bgr(
             cv::Point2f center(0.0f, 0.0f);
             float radius = 0.0f;
             cv::minEnclosingCircle(c, center, radius);
+
+            // Reject before candidate scoring and Kalman correction so a large
+            // matching patch below the board cannot steal the measurement.
+            if (cutoff_a * center.x + cutoff_b * center.y + cutoff_c < 0) continue;
 
             double score = area * std::max(circularity, 0.05);
             if (radius >= 3.0f && radius <= 85.0f && score > best_score) {

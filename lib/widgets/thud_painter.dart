@@ -1,4 +1,5 @@
 import 'dart:math';
+import '../detection/impact_detector.dart';
 import 'package:flutter/material.dart';
 import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
@@ -58,7 +59,9 @@ class ThudPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (detection == null || detection!.frameWidth == 0 || detection!.frameHeight == 0) {
+    if (detection == null ||
+        detection!.frameWidth == 0 ||
+        detection!.frameHeight == 0) {
       return;
     }
 
@@ -94,13 +97,20 @@ class ThudPainter extends CustomPainter {
       for (int i = 0; i < trail.length - 1; i++) {
         final t = (i + 1) / trail.length;
         final p1 = toScreenOffset(trail[i].position.dx, trail[i].position.dy);
-        final p2 = toScreenOffset(trail[i + 1].position.dx, trail[i + 1].position.dy);
+        final p2 = toScreenOffset(
+          trail[i + 1].position.dx,
+          trail[i + 1].position.dy,
+        );
 
         final isPred = trail[i + 1].isPredicted;
-        final baseColor = isPred ? Colors.orangeAccent : const Color(0xFF00FF66);
+        final baseColor = isPred
+            ? Colors.orangeAccent
+            : const Color(0xFF00FF66);
 
         final trailPaint = Paint()
-          ..color = baseColor.withValues(alpha: (0.15 + 0.85 * t).clamp(0.0, 1.0))
+          ..color = baseColor.withValues(
+            alpha: (0.15 + 0.85 * t).clamp(0.0, 1.0),
+          )
           ..strokeWidth = 2.0 + 4.0 * t
           ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke;
@@ -114,7 +124,9 @@ class ThudPainter extends CustomPainter {
       final center = toScreenOffset(detection!.x, detection!.y);
       final radius = max(18.0, detection!.radius * (size.width / frameH));
 
-      final mainColor = detection!.isPredicted ? Colors.orangeAccent : const Color(0xFF00FF66);
+      final mainColor = detection!.isPredicted
+          ? Colors.orangeAccent
+          : const Color(0xFF00FF66);
 
       // Outer glow
       final glowPaint = Paint()
@@ -155,15 +167,34 @@ class ThudPainter extends CustomPainter {
       final tickPaint = Paint()
         ..color = mainColor
         ..strokeWidth = 2.0;
-      canvas.drawLine(center + const Offset(-8, 0), center + const Offset(-4, 0), tickPaint);
-      canvas.drawLine(center + const Offset(4, 0), center + const Offset(8, 0), tickPaint);
-      canvas.drawLine(center + const Offset(0, -8), center + const Offset(0, -4), tickPaint);
-      canvas.drawLine(center + const Offset(0, 4), center + const Offset(0, 8), tickPaint);
+      canvas.drawLine(
+        center + const Offset(-8, 0),
+        center + const Offset(-4, 0),
+        tickPaint,
+      );
+      canvas.drawLine(
+        center + const Offset(4, 0),
+        center + const Offset(8, 0),
+        tickPaint,
+      );
+      canvas.drawLine(
+        center + const Offset(0, -8),
+        center + const Offset(0, -4),
+        tickPaint,
+      );
+      canvas.drawLine(
+        center + const Offset(0, 4),
+        center + const Offset(0, 8),
+        tickPaint,
+      );
     }
 
     // 3. Draw Persistent Historical Hit Markers on Screen
     for (final hit in recordedHits) {
-      final hitCenter = toScreenOffset(hit.cameraPosition.dx, hit.cameraPosition.dy);
+      final hitCenter = toScreenOffset(
+        hit.cameraPosition.dx,
+        hit.cameraPosition.dy,
+      );
 
       // Outer Red Bullseye Ring
       final hitRingPaint = Paint()
@@ -185,33 +216,36 @@ class ThudPainter extends CustomPainter {
           color: Colors.redAccent,
           fontSize: 12,
           fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(color: Colors.black, blurRadius: 4),
-          ],
+          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
         ),
       );
-      final tp = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final tp = TextPainter(text: textSpan, textDirection: TextDirection.ltr)
+        ..layout();
       tp.paint(canvas, hitCenter + const Offset(12, -18));
     }
 
     // 4. Draw Active Expanding Shockwave Splash Animations
     for (final splash in activeSplashes) {
-      final sCenter = toScreenOffset(splash.cameraPosition.dx, splash.cameraPosition.dy);
+      final sCenter = toScreenOffset(
+        splash.cameraPosition.dx,
+        splash.cameraPosition.dy,
+      );
       final rad = splash.radius;
 
       // Primary Cyan Shockwave Ring
       final shockwavePaint1 = Paint()
-        ..color = Colors.cyanAccent.withValues(alpha: (splash.remainingFrames / 18.0).clamp(0.0, 1.0))
+        ..color = Colors.cyanAccent.withValues(
+          alpha: (splash.remainingFrames / 18.0).clamp(0.0, 1.0),
+        )
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.5;
       canvas.drawCircle(sCenter, rad, shockwavePaint1);
 
       // Secondary Orange Shockwave Ring
       final shockwavePaint2 = Paint()
-        ..color = Colors.orangeAccent.withValues(alpha: (splash.remainingFrames / 18.0).clamp(0.0, 1.0))
+        ..color = Colors.orangeAccent.withValues(
+          alpha: (splash.remainingFrames / 18.0).clamp(0.0, 1.0),
+        )
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
       canvas.drawCircle(sCenter, rad * 0.7, shockwavePaint2);
@@ -220,7 +254,9 @@ class ThudPainter extends CustomPainter {
     // 5. Draw Ordered Boundary Quad Overlay (bright green when locked, glowing amber when wall contact, orange when editing)
     if (arucoCorners != null && arucoCorners!.length == 4) {
       final ordered = orderArUcoCorners(arucoCorners!);
-      final screenQuad = ordered.map((c) => toScreenOffset(c.dx, c.dy)).toList();
+      final screenQuad = ordered
+          .map((c) => toScreenOffset(c.dx, c.dy))
+          .toList();
 
       final quadPath = Path()
         ..moveTo(screenQuad[0].dx, screenQuad[0].dy)
@@ -232,7 +268,7 @@ class ThudPainter extends CustomPainter {
       bool inWallZone = false;
       if (isBoundaryLocked && detection != null && detection!.detected) {
         final pos = Offset(detection!.x, detection!.y);
-        inWallZone = _isNearOrOutsideQuad(pos, arucoCorners!, 35.0);
+        inWallZone = ImpactDetector.insideBoard(pos, arucoCorners!);
       }
 
       final Color baseQuadColor = isBoundaryLocked
@@ -255,7 +291,9 @@ class ThudPainter extends CustomPainter {
         ..strokeWidth = isBoundaryLocked ? (inWallZone ? 4.5 : 3.0) : 2.5;
 
       final fillPaint = Paint()
-        ..color = baseQuadColor.withValues(alpha: isBoundaryLocked ? (inWallZone ? 0.22 : 0.12) : 0.06)
+        ..color = baseQuadColor.withValues(
+          alpha: isBoundaryLocked ? (inWallZone ? 0.22 : 0.12) : 0.06,
+        )
         ..style = PaintingStyle.fill;
 
       canvas.drawPath(quadPath, fillPaint);
@@ -264,46 +302,20 @@ class ThudPainter extends CustomPainter {
       // On-screen Status Badge when in Wall Contact Zone
       if (inWallZone) {
         final textSpan = TextSpan(
-          text: '★ WALL ZONE CONTACT ★',
+          text: 'BALL IN BOARD AREA',
           style: TextStyle(
             color: const Color(0xFFFFCC00),
             fontSize: 14,
             fontWeight: FontWeight.w900,
             letterSpacing: 1.2,
-            shadows: const [
-              Shadow(color: Colors.black, blurRadius: 6),
-            ],
+            shadows: const [Shadow(color: Colors.black, blurRadius: 6)],
           ),
         );
-        final tp = TextPainter(
-          text: textSpan,
-          textDirection: TextDirection.ltr,
-        )..layout();
+        final tp = TextPainter(text: textSpan, textDirection: TextDirection.ltr)
+          ..layout();
         tp.paint(canvas, Offset((size.width - tp.width) / 2, 45.0));
       }
     }
-  }
-
-  bool _isNearOrOutsideQuad(Offset p, List<Offset> quad, double thresholdPx) {
-    if (quad.length != 4) return false;
-    double minDistance = double.infinity;
-    for (int i = 0; i < 4; i++) {
-      final a = quad[i];
-      final b = quad[(i + 1) % 4];
-      final ab = b - a;
-      final ap = p - a;
-      final lengthSq = ab.dx * ab.dx + ab.dy * ab.dy;
-      double d = 0.0;
-      if (lengthSq == 0) {
-        d = ap.distance;
-      } else {
-        final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / lengthSq).clamp(0.0, 1.0);
-        final proj = a + ab * t;
-        d = (p - proj).distance;
-      }
-      if (d < minDistance) minDistance = d;
-    }
-    return minDistance <= thresholdPx;
   }
 
   @override

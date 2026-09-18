@@ -38,6 +38,8 @@ TRACKER_EXPORT int get_tracker_version();
 
 // Reset Kalman filter and motion tracking history
 TRACKER_EXPORT void reset_kalman_tracker();
+// Candidate center must satisfy a*x + b*y + c >= 0; zeros disable.
+TRACKER_EXPORT void set_tracking_cutoff(float a, float b, float c);
 
 // Android CameraImage YUV420_888 frame detection
 TRACKER_EXPORT DetectionResult detect_ball_yuv420(

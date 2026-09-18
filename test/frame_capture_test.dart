@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ballistic_cv/capture/frame_capture.dart';
@@ -39,10 +40,16 @@ void main() {
             return null;
         }
       });
-      final capture = FrameCapture(channel: channel);
+      final logs = <String>[];
+      final capture = FrameCapture(channel: channel, log: logs.add);
       await capture.load();
       await capture.start({'objectName': 'Ball'});
-      capture.add(() => {'width': 2});
+      final sample = capture.traceSample({
+        'status': 'measured',
+        'region': 'inside',
+      });
+      capture.add(() => {'width': 2, 'sample': sample});
+      capture.traceSample({'status': 'predicted', 'region': 'outside'});
       capture.add(() => throw StateError('Queued a second raw frame'));
       final finish = capture.finish();
       await Future<void>.delayed(Duration.zero);
@@ -51,6 +58,19 @@ void main() {
       await finish;
       expect(capture.count, 1);
       expect(capture.skipped, 1);
+      final events = logs
+          .map(
+            (line) => jsonDecode(line.substring('[ScanTrace] '.length)) as Map,
+          )
+          .toList();
+      expect(events.where((e) => e['event'] == 'sample').length, 2);
+      final stored = events.singleWhere((e) => e['event'] == 'stored');
+      expect(stored['frame'], 1);
+      expect(stored['sample'], sample);
+      expect(events.last['event'], 'end');
+      final logCount = logs.length;
+      expect(capture.traceSample({}), isNull);
+      expect(logs.length, logCount);
       expect(capture.saved!.frames.length, 1);
       await capture.start({});
       expect(calls.where((e) => e == 'start').length, 1);

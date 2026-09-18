@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'diagnostics/console_log.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +26,15 @@ Future<void> main() async {
   }
 
   runApp(BallisticCvApp(cameras: _cameras));
+  consoleLog(
+    '[ConsoleCheck] ${DateTime.now().toUtc().toIso8601String()} startup OK; impactAngle=35 minLegPx=3',
+  );
+  Timer(
+    const Duration(seconds: 2),
+    () => consoleLog(
+      '[ConsoleCheck] ${DateTime.now().toUtc().toIso8601String()} Dart-to-native console OK; ready for Scan 10s',
+    ),
+  );
 }
 
 class BallisticCvApp extends StatelessWidget {

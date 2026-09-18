@@ -1,14 +1,14 @@
 # BallisticCV ⚡
 
-> A high-speed, on-device mobile computer vision app built with Flutter and native C++ (`opencv-mobile`) for real-time 60 FPS ping-pong ball tracking and rebound detection. It pairs camera frame processing with a dynamic cyberpunk HUD and neon trajectory overlays.
+> A high-speed, on-device mobile computer vision app built with Flutter and native C++ (`opencv-mobile`) for real-time ping-pong ball tracking with a 60 FPS target and rebound detection. It pairs camera frame processing with a dynamic cyberpunk HUD and neon trajectory overlays.
 
 ---
 
 ## 🎯 Features
 
-* **Real-time 60 FPS Tracking**: Runs on-device with zero server latency using `opencv-mobile` linked via Dart FFI.
+* **Real-time Tracking (60 FPS target)**: Runs on-device with zero server latency using `opencv-mobile` linked via Dart FFI.
 * **Smart Filtering**: BGR $\to$ HSV color masking with morphological opening and contour circularity gating.
-* **Ball Radius Gating**: Discards large background objects, walls, and reflections ($6\text{px} \le r \le 85\text{px}$).
+* **Ball Radius Gating**: Discards large background objects, walls, and reflections ($3\text{px} \le r \le 85\text{px}$).
 * **Dynamic Cyberpunk HUD**:
   * Glowing dynamic border: **Green** when `TRACKING`, **Red** when `SEARCHING`.
   * Live FPS counter (targeting 60 FPS).
@@ -17,6 +17,59 @@
 * **Cross-Platform**:
   * Android (Poco and other ARM devices via NDK & CMake).
   * iOS (iPhone AVFoundation).
+
+---
+
+## Navigation and camera controls
+
+**Objects**, **Activities**, **Play**, and **Debug** are bottom tabs. Selected
+objects and activities show a selection mark and persist across restarts; a valid
+saved pair opens Play directly. Activities uses a single “Your activities” header.
+Debug owns frame review/deletion and coordinate recording/export.
+
+Play's compact horizontal zoom controls step by 0.1×; holding an arrow repeats
+until released or the supported limit is reached. Zoom is saved and restored.
+Image-space distance thresholds vary with zoom, so keep zoom consistent when
+comparing trials.
+
+## Thud board alignment and impact detection
+
+Drag the four initially smaller, central handles onto the board and lock it.
+Locking saves normalized corners per camera and zoom, restored on return at the
+same aspect ratio. A new zoom needs its own alignment; returning to a previously
+saved zoom restores that calibration. Realigning is necessary if the camera or
+board physically moves.
+
+**Ignore below board** rejects native ball candidates below the board's sloping
+lower edge, extended across the image, with a 5-camera-pixel allowance. The filter
+runs before candidate selection and Kalman correction so an orange table patch
+cannot supply a below-edge measurement. Prediction still handles missing
+measurements; real ball motion below the cutoff will also be ignored. This
+preference persists and applies while the board is locked.
+
+Impact detection uses three consecutive measured positions A → B → C and marks
+B when C arrives. B must be inside the locked board; A and C may be outside.
+Current gates are **30° minimum turn**, **3 camera pixels per leg**, **60 pixels/s
+per leg**, no more than **80 ms between measurements**, and **180 ms cooldown**.
+Predicted/lost positions reset the window; accepted windows are consumed. This
+avoids waiting for a seven-point window that can outlast a fast rebound. The
+Kalman tracker is separate from this impact detector.
+
+A 20-hit coordinate session yielded 18 candidates at 35°. Replaying at 30°/3px
+produced one candidate in each of 20 board visits, recovering turns of 30.4° and
+31.5°. Lowering the pixel gate added nothing. This supports the 30° change, but
+2D turns remain contact candidates: further throws and no-contact controls are
+needed to assess false positives. Historical reports retain their original 35°
+settings; new recordings export the current threshold.
+
+### Console troubleshooting
+
+Run `flutter run --release -d <iphone-device-id>` with the phone unlocked. Native
+stderr forwarding emits timestamped `ConsoleCheck` startup messages so console
+capture can be verified before throwing. `ScanTrace` includes processed sample
+timestamps, board/ball coordinates, region status, and saved-image mappings;
+processed sample IDs and saved-image frame numbers are different. Coordinate
+recording below provides the same style of offline diagnostics without a cable.
 
 ---
 
@@ -96,7 +149,8 @@ FFI signature when changing the shared Dart bindings.
 
 The current pipeline copies camera bytes into reusable native buffers and runs
 tracking synchronously. Camera FPS and tracking throughput must be measured on
-the device; 60 FPS is a target, not currently enforced by the camera configuration.
+the device; iOS requests 60 FPS, but the camera may select a lower supported rate. The HUD
+reports delivered FPS; resolution, exposure, and synchronous CV can limit throughput.
 
 ### Native regression test (Mac)
 
@@ -118,7 +172,7 @@ checks invalid row strides, null input, and frames without a ball.
 
 ### Scanned frames (iPhone)
 
-Use **Scan 10s** on the Tracking screen to capture up to 600 lossless PNG frames
+Use **Scan 10s** on the Play screen to capture up to 600 lossless PNG frames
 with their relative processing timestamps, selected HSV profile, detections,
 and displayed trails. Capture stops after 10 seconds, on interruption, or if a
 write fails. A single outstanding disk write bounds memory; frames arriving
@@ -149,3 +203,41 @@ flutter build ios --release --no-codesign
 
 Capture/write throughput and ruler responsiveness still need validation on a
 physical iPhone. Frame capture is currently implemented for iOS only.
+
+### Offline coordinate recordings
+
+On iPhone, open **Debug → Start tracking recording**, then **Play → Thud**.
+Return to Debug and select **Stop and save recording**; optionally enter your
+actual hit count. Each session is saved privately as a `.jsonl` file. Use its
+share icon for AirDrop or **Save to Files**. No Mac, network, or image capture is
+required. The session stops after 10 minutes or when the app becomes inactive.
+
+The JSON Lines file contains a schema/settings header, timestamped samples in
+camera pixels (board, zoom, cutoff state, object, measured/predicted/searching,
+inside-board flag, ball position/velocity, and new hit events), and a summary
+with detected/actual counts and dropped-write samples. Outside-board and lost
+samples are included so replay does not accidentally join unrelated trajectories.
+Unfinished files after a terminated app may lack the final summary; earlier
+complete lines remain available. This is diagnostic telemetry, not video.
+
+### Replay an exported tracking recording
+
+Run from the project root (Python 3, no extra packages):
+
+```bash
+python3 scripts/analyze_trajectory.py ~/Downloads/thud-1789749904559-7B5074EC.jsonl --actual-hits 20 --output-dir reports/thud-2026-09-18
+```
+
+Replace the input filename and output folder for each session. `--actual-hits`
+overrides the optional count saved by the phone. The tool replays the schema-1
+three-point detector using the exported thresholds, checks app/replay hit
+timestamps, lists candidates and board visits, and compares angle/pixel thresholds.
+It saves `summary.json` (including sensitivity candidates) and `turns.csv` (each
+evaluated window and rejection gates). Sample numbers refer to coordinate samples,
+not saved image frame numbers. Predicted/lost samples break the window, matching
+the app. Board visits grouped within 0.5 seconds are diagnostic, not confirmed
+physical throws; matching a total count alone does not prove detection accuracy.
+The replay assumes uninterrupted detector state; changing alignment or other
+settings mid-session can reset app state and cause a reported mismatch.
+
+Regression checks: `python3 -m unittest discover -s test -p test_analyze_trajectory.py`.

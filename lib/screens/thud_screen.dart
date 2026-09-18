@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
+import '../detection/impact_detector.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../capture/frame_capture.dart';
+import '../capture/trajectory_recorder.dart';
 import '../models/hsv_profile.dart';
+import '../models/board_alignment.dart';
 import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
 import '../widgets/thud_painter.dart';
@@ -44,13 +46,16 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
   // Interactive Boundary Quad State
   List<Offset>? _arucoBoundary;
   bool _isBoundaryLocked = false;
+  bool _restoreBoard = true;
+  bool _savingBoard = false;
+  bool _ignoreBelowBoard = false;
 
   // Trajectory & Detection State
   final List<TrackingPoint> _trail = [];
   final List<ThudHit> _recordedHits = [];
   final List<ActiveSplash> _activeSplashes = [];
 
-  int _cooldownFrames = 0;
+  final ImpactDetector _impactDetector = ImpactDetector();
 
   // Frame timing & FPS
   int _frameCount = 0;
@@ -78,7 +83,10 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
       'objectName': widget.objectName,
       'activity': 'thud',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
-      'boundary': _arucoBoundary?.map((pt) => {'x': pt.dx, 'y': pt.dy}).toList(),
+      'boundary': _arucoBoundary
+          ?.map((pt) => {'x': pt.dx, 'y': pt.dy})
+          .toList(),
+      'ignoreBelowBoard': _ignoreBelowBoard,
       'isBoundaryLocked': _isBoundaryLocked,
       'hsv': [
         p.hMed,
@@ -118,6 +126,8 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         _minZoom = await controller.getMinZoomLevel();
         _maxZoom = await controller.getMaxZoomLevel();
         _zoomPreferences = await SharedPreferences.getInstance();
+        _ignoreBelowBoard =
+            _zoomPreferences!.getBool('thud_ignore_below_board') ?? false;
         _zoom = (_zoomPreferences!.getDouble('play_zoom') ?? 1.0).clamp(
           _minZoom,
           _maxZoom,
@@ -137,6 +147,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         _controller = controller;
       });
 
+      _restoreBoard = true;
       await controller.startImageStream(_processCameraFrame);
     } catch (e) {
       debugPrint('Error initializing camera controller: $e');
@@ -145,13 +156,26 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
 
   Future<void> _stepZoom(int direction) async {
     final controller = _controller;
-    if (_zoomBusy || controller == null) return;
+    if (_zoomBusy || _savingBoard || _capture.busy || controller == null) {
+      return;
+    }
     final value = ((_zoom * 10).round() + direction) / 10;
     final next = value.clamp(_minZoom, _maxZoom);
     setState(() => _zoomBusy = true);
     try {
       await controller.setZoomLevel(next);
-      if (mounted) setState(() => _zoom = next);
+      if (mounted) {
+        setState(() {
+          _zoom = next;
+          // A zoom change invalidates the board's camera-space coordinates.
+          _isBoundaryLocked = false;
+          _restoreBoard = true;
+          _impactDetector.reset();
+          _trail.clear();
+          _recordedHits.clear();
+          _activeSplashes.clear();
+        });
+      }
       final preferences =
           _zoomPreferences ?? await SharedPreferences.getInstance();
       if (!await preferences.setDouble('play_zoom', next)) {
@@ -171,90 +195,52 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     }
   }
 
-  bool _isPointInsideQuad(Offset p, List<Offset> quad) {
-    if (quad.length != 4) return true;
-    bool? positive;
-    for (int i = 0; i < 4; i++) {
-      final a = quad[i];
-      final b = quad[(i + 1) % 4];
-      final crossProduct =
-          (b.dx - a.dx) * (p.dy - a.dy) - (b.dy - a.dy) * (p.dx - a.dx);
-      if (crossProduct == 0) continue;
-      if (positive == null) {
-        positive = crossProduct > 0;
-      } else if ((crossProduct > 0) != positive) {
-        return false;
-      }
+  Future<void> _onToggleBoundaryPressed() async {
+    if (_capture.busy || _savingBoard || _lastDetection == null) return;
+    _impactDetector.reset();
+    _trail.clear();
+    if (_isBoundaryLocked) {
+      setState(() => _isBoundaryLocked = false);
+      return;
     }
-    return true;
-  }
-
-  double _distanceToSegment(Offset p, Offset a, Offset b) {
-    final ab = b - a;
-    final ap = p - a;
-    final lengthSq = ab.dx * ab.dx + ab.dy * ab.dy;
-    if (lengthSq == 0) return ap.distance;
-    final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / lengthSq).clamp(0.0, 1.0);
-    final projection = a + ab * t;
-    return (p - projection).distance;
-  }
-
-  double _distanceToQuadEdge(Offset p, List<Offset> quad) {
-    if (quad.length != 4) return 0.0;
-    double minDistance = double.infinity;
-    for (int i = 0; i < 4; i++) {
-      final a = quad[i];
-      final b = quad[(i + 1) % 4];
-      final d = _distanceToSegment(p, a, b);
-      if (d < minDistance) {
-        minDistance = d;
-      }
-    }
-    return minDistance;
-  }
-
-  bool _isNearOrOutsideWall(Offset p, List<Offset> quad, double thresholdPx) {
-    if (quad.length != 4) return false;
-    final isInside = _isPointInsideQuad(p, quad);
-    if (!isInside) return true; // Ball went outside boundary line (in/past wall)
-    final edgeDist = _distanceToQuadEdge(p, quad);
-    return edgeDist <= thresholdPx;
-  }
-
-  void _onToggleBoundaryPressed() {
-    if (_capture.busy) return;
-    setState(() {
-      if (_isBoundaryLocked) {
-        _isBoundaryLocked = false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Boundary unlocked. Drag corner handles to align.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } else {
+    final width = _lastDetection!.frameWidth.toDouble();
+    final height = _lastDetection!.frameHeight.toDouble();
+    final points = List<Offset>.from(
+      _arucoBoundary ?? BoardAlignment.initial(width, height),
+    );
+    _savingBoard = true;
+    try {
+      final prefs = _zoomPreferences ?? await SharedPreferences.getInstance();
+      await BoardAlignment.save(
+        prefs,
+        _controller!.description.name,
+        _zoom,
+        width,
+        height,
+        points,
+      );
+      if (!mounted) return;
+      setState(() {
+        _arucoBoundary = points;
         _isBoundaryLocked = true;
-        if (_arucoBoundary == null || _arucoBoundary!.length != 4) {
-          final w = _lastDetection?.frameWidth.toDouble() ?? 480.0;
-          final h = _lastDetection?.frameHeight.toDouble() ?? 360.0;
-          _arucoBoundary = [
-            Offset(w * 0.15, h * 0.15),
-            Offset(w * 0.85, h * 0.15),
-            Offset(w * 0.85, h * 0.85),
-            Offset(w * 0.15, h * 0.85),
-          ];
-        }
-        // Clear all previous hit points when boundary is locked
         _recordedHits.clear();
         _activeSplashes.clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Boundary locked. Hits inside quad will be tracked.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Board locked and saved for this zoom.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
-    });
+    } finally {
+      _savingBoard = false;
+    }
   }
 
   void _processCameraFrame(CameraImage image) {
@@ -262,6 +248,28 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     _isProcessing = true;
 
     try {
+      if (_restoreBoard) {
+        final prefs = _zoomPreferences;
+        final restored = prefs == null || _controller == null
+            ? null
+            : BoardAlignment.load(
+                prefs,
+                _controller!.description.name,
+                _zoom,
+                image.width.toDouble(),
+                image.height.toDouble(),
+              );
+        _arucoBoundary =
+            restored ??
+            _arucoBoundary ??
+            BoardAlignment.initial(
+              image.width.toDouble(),
+              image.height.toDouble(),
+            );
+        _isBoundaryLocked = restored != null;
+        _restoreBoard = false;
+        _impactDetector.reset();
+      }
       final double circularityThreshold = _isBoundaryLocked ? 0.08 : 0.35;
 
       final detection = NativeTracker.instance.detectFromCameraImage(
@@ -274,6 +282,9 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         vMax: widget.hsvProfile.vMax,
         enableMotion: false,
         minCircularity: circularityThreshold,
+        cutoff: _ignoreBelowBoard && _isBoundaryLocked
+            ? BoardAlignment.cutoff(_arucoBoundary)
+            : null,
       );
 
       // FPS Calculation
@@ -284,10 +295,6 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         _fps = (_frameCount * 1000.0) / elapsed;
         _frameCount = 0;
         _lastFpsCheck = now;
-      }
-
-      if (_cooldownFrames > 0) {
-        _cooldownFrames--;
       }
 
       // Update Active Shockwave Animations
@@ -305,12 +312,83 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
 
           final frameW = detection.frameWidth.toDouble();
           final frameH = detection.frameHeight.toDouble();
-          final currentQuad = _arucoBoundary ?? [
-            Offset(frameW * 0.15, frameH * 0.15),
-            Offset(frameW * 0.85, frameH * 0.15),
-            Offset(frameW * 0.85, frameH * 0.85),
-            Offset(frameW * 0.15, frameH * 0.85),
-          ];
+          final currentQuad =
+              _arucoBoundary ?? BoardAlignment.initial(frameW, frameH);
+
+          final impact = _impactDetector.add(
+            position: Offset(detection.x, detection.y),
+            timestamp: now,
+            measured:
+                _isBoundaryLocked &&
+                detection.detected &&
+                !detection.isPredicted,
+            board: currentQuad,
+          );
+          if (TrajectoryRecorder.instance.recording) {
+            TrajectoryRecorder.instance.add({
+              'timestampUs': now.microsecondsSinceEpoch,
+              'objectId': widget.objectId,
+              'objectName': widget.objectName,
+              'width': image.width,
+              'height': image.height,
+              'zoom': _zoom,
+              'ignoreBelowBoard': _ignoreBelowBoard,
+              'boardLocked': _isBoundaryLocked,
+              'board': currentQuad.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
+              'status': !detection.detected
+                  ? 'searching'
+                  : detection.isPredicted
+                  ? 'predicted'
+                  : 'measured',
+              'insideBoard': detection.detected
+                  ? ImpactDetector.insideBoard(
+                      Offset(detection.x, detection.y),
+                      currentQuad,
+                    )
+                  : null,
+              'ball': detection.detected
+                  ? {
+                      'x': detection.x,
+                      'y': detection.y,
+                      'vx': detection.vx,
+                      'vy': detection.vy,
+                      'radius': detection.radius,
+                    }
+                  : null,
+              'hit': impact == null
+                  ? null
+                  : {
+                      'x': impact.position.dx,
+                      'y': impact.position.dy,
+                      'angleDegrees': impact.angleDegrees,
+                      'timestampUs': impact.timestamp.microsecondsSinceEpoch,
+                    },
+            });
+          }
+          if (impact != null) {
+            final hitNum = _recordedHits.length + 1;
+            _recordedHits.add(
+              ThudHit(
+                number: hitNum,
+                cameraPosition: impact.position,
+                deflectionDegrees: impact.angleDegrees,
+                timestamp: impact.timestamp,
+              ),
+            );
+            _activeSplashes.add(
+              ActiveSplash(
+                hitNumber: hitNum,
+                cameraPosition: impact.position,
+                deflectionDegrees: impact.angleDegrees,
+              ),
+            );
+            debugPrint(
+              '[Thud] IMPACT CANDIDATE #$hitNum at '
+              '(${impact.position.dx.toStringAsFixed(1)}, ${impact.position.dy.toStringAsFixed(1)}); '
+              'angle=${impact.angleDegrees.toStringAsFixed(1)}°, '
+              'confirmationDelay=${now.difference(impact.timestamp).inMilliseconds}ms',
+            );
+          }
 
           if (detection.detected) {
             final currentPos = Offset(detection.x, detection.y);
@@ -325,103 +403,6 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
             if (_trail.length > 25) {
               _trail.removeAt(0);
             }
-
-            // Wall Collision & Displacement Gated Impact Detection on _trail Directly
-            if (_isBoundaryLocked && _cooldownFrames == 0) {
-              final validTrail =
-                  _trail.where((p) => !p.isPredicted).toList();
-
-              if (validTrail.length >= 3) {
-                final bool currentlyNearWall =
-                    _isNearOrOutsideWall(currentPos, currentQuad, 20.0);
-
-                if (!currentlyNearWall && validTrail.length >= 4) {
-                  final pLast = validTrail.last.position;
-
-                  int bestIdx = -1;
-                  double minApexDist = double.infinity;
-
-                  // Find Trajectory Inflection Vertex (where normal distance stops decreasing and starts increasing)
-                  for (int i = 1; i < validTrail.length - 1; i++) {
-                    final pt = validTrail[i];
-                    if (_isNearOrOutsideWall(pt.position, currentQuad, 25.0)) {
-                      final dPrev =
-                          _distanceToQuadEdge(validTrail[i - 1].position, currentQuad);
-                      final dCurr =
-                          _distanceToQuadEdge(pt.position, currentQuad);
-                      final dNext =
-                          _distanceToQuadEdge(validTrail[i + 1].position, currentQuad);
-
-                      // Check if point is a local inflection vertex (d stops decreasing and starts increasing)
-                      if (dPrev >= dCurr && dNext > dCurr) {
-                        if (dCurr < minApexDist) {
-                          minApexDist = dCurr;
-                          bestIdx = i;
-                        }
-                      }
-                    }
-                  }
-
-                  // Fallback to min edge distance if explicit sign flip is subtle
-                  if (bestIdx == -1) {
-                    for (int i = 0; i < validTrail.length - 1; i++) {
-                      final pt = validTrail[i];
-                      if (_isNearOrOutsideWall(pt.position, currentQuad, 20.0)) {
-                        final d = _distanceToQuadEdge(pt.position, currentQuad);
-                        if (d < minApexDist) {
-                          minApexDist = d;
-                          bestIdx = i;
-                        }
-                      }
-                    }
-                  }
-
-                  if (bestIdx > 0) {
-                    final pFirst =
-                        validTrail[math.max(0, bestIdx - 3)].position;
-                    final pPeak = validTrail[bestIdx].position;
-
-                    final dFirst = _distanceToQuadEdge(pFirst, currentQuad);
-                    final dPeak = _distanceToQuadEdge(pPeak, currentQuad);
-                    final dLast = _distanceToQuadEdge(pLast, currentQuad);
-
-                    final dApproach = dFirst - dPeak;
-                    final dRebound = dLast - dPeak;
-
-                    final vIn = Offset(pPeak.dx - pFirst.dx, pPeak.dy - pFirst.dy);
-                    final vOut = Offset(pLast.dx - pPeak.dx, pLast.dy - pPeak.dy);
-
-                    if ((dApproach >= 4.0 || vIn.distance >= 8.0) &&
-                        (dRebound >= 3.0 || vOut.distance >= 5.0)) {
-                      final hitPos = pPeak;
-                      final hitNum = _recordedHits.length + 1;
-
-                      _recordedHits.add(
-                        ThudHit(
-                          number: hitNum,
-                          cameraPosition: hitPos,
-                          deflectionDegrees: 45.0,
-                          timestamp: now,
-                        ),
-                      );
-                      _activeSplashes.add(
-                        ActiveSplash(
-                          hitNumber: hitNum,
-                          cameraPosition: hitPos,
-                          deflectionDegrees: 45.0,
-                        ),
-                      );
-
-                      _cooldownFrames = 12;
-                      debugPrint(
-                        '[Thud] DIRECT TRAIL IMPACT #$hitNum at (${hitPos.dx.toInt()}, ${hitPos.dy.toInt()}); '
-                        'Approach=${dApproach.toStringAsFixed(1)}px, Rebound=${dRebound.toStringAsFixed(1)}px',
-                      );
-                    }
-                  }
-                }
-              }
-            }
           } else {
             // Ball lost
             if (_trail.isNotEmpty) {
@@ -432,15 +413,64 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
       }
 
       if (Platform.isIOS && image.format.group == ImageFormatGroup.bgra8888) {
+        // Trace all processed samples while scanning, not only written PNGs.
+        final board = _arucoBoundary;
+        final sample = _capture.capturing
+            ? _capture.traceSample({
+                'timestampUs': now.microsecondsSinceEpoch,
+                'width': image.width,
+                'height': image.height,
+                'orientation': _controller?.description.sensorOrientation ?? 90,
+                'board': board?.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
+                'boardLocked': _isBoundaryLocked,
+                'ignoreBelowBoard': _ignoreBelowBoard,
+                'ball': detection.detected
+                    ? {
+                        'x': detection.x,
+                        'y': detection.y,
+                        'vx': detection.vx,
+                        'vy': detection.vy,
+                        'radius': detection.radius,
+                      }
+                    : null,
+                'status': !detection.detected
+                    ? 'searching'
+                    : detection.isPredicted
+                    ? 'predicted'
+                    : 'measured',
+                'region': !detection.detected || board == null
+                    ? 'unknown'
+                    : ImpactDetector.insideBoard(
+                        Offset(detection.x, detection.y),
+                        board,
+                      )
+                    ? 'inside'
+                    : 'outside',
+                'hitCount': _recordedHits.length,
+                'lastHit': _recordedHits.isEmpty
+                    ? null
+                    : {
+                        'number': _recordedHits.last.number,
+                        'x': _recordedHits.last.cameraPosition.dx,
+                        'y': _recordedHits.last.cameraPosition.dy,
+                        'angleDegrees': _recordedHits.last.deflectionDegrees,
+                        'timestampUs':
+                            _recordedHits.last.timestamp.microsecondsSinceEpoch,
+                      },
+              })
+            : null;
         _capture.add(
           () => {
+            'sample': sample,
+            'timestampUs': now.microsecondsSinceEpoch,
             'bytes': image.planes.first.bytes,
             'width': image.width,
             'height': image.height,
             'stride': image.planes.first.bytesPerRow,
             'orientation': _controller?.description.sensorOrientation ?? 90,
-            'boundary':
-                _arucoBoundary?.map((pt) => {'x': pt.dx, 'y': pt.dy}).toList(),
+            'boundary': _arucoBoundary
+                ?.map((pt) => {'x': pt.dx, 'y': pt.dy})
+                .toList(),
             'isBoundaryLocked': _isBoundaryLocked,
             'detection': {
               'x': detection.x,
@@ -506,6 +536,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
 
   void _clearHits() {
     if (_capture.busy) return;
+    _impactDetector.reset();
     setState(() {
       _recordedHits.clear();
       _activeSplashes.clear();
@@ -517,6 +548,8 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     if (_controller == null || !_controller!.value.isInitialized) return;
 
     if (state == AppLifecycleState.inactive) {
+      _impactDetector.reset();
+      _trail.clear();
       _controller?.dispose();
     } else if (state == AppLifecycleState.resumed) {
       _initCamera();
@@ -542,8 +575,29 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         appBar: AppBar(
           title: Text('${widget.objectName} · Thud (Impacts)'),
           automaticallyImplyLeading: !widget.embedded,
-          leading: widget.embedded ? null : BackButton(onPressed: _navigateBack),
+          leading: widget.embedded
+              ? null
+              : BackButton(onPressed: _navigateBack),
           actions: [
+            PopupMenuButton<bool>(
+              tooltip: 'Tracking options',
+              onSelected: (value) async {
+                setState(() => _ignoreBelowBoard = value);
+                NativeTracker.instance.resetKalmanTracker();
+                _impactDetector.reset();
+                _trail.clear();
+                final prefs =
+                    _zoomPreferences ?? await SharedPreferences.getInstance();
+                await prefs.setBool('thud_ignore_below_board', value);
+              },
+              itemBuilder: (_) => [
+                CheckedPopupMenuItem<bool>(
+                  value: !_ignoreBelowBoard,
+                  checked: _ignoreBelowBoard,
+                  child: const Text('Ignore below board (when locked)'),
+                ),
+              ],
+            ),
             if (_recordedHits.isNotEmpty)
               IconButton(
                 tooltip: 'Clear hit markers',
@@ -589,7 +643,8 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
 
                   Offset toScreen(double camX, double camY) {
                     if (orientation == 90 && frameW > frameH) {
-                      final screenX = (1.0 - (camY / frameH)) * screenSize.width;
+                      final screenX =
+                          (1.0 - (camY / frameH)) * screenSize.width;
                       final screenY = (camX / frameW) * screenSize.height;
                       return Offset(screenX, screenY);
                     } else {
@@ -602,21 +657,24 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                   Offset toCamera(Offset screen) {
                     if (orientation == 90 && frameW > frameH) {
                       final camX = (screen.dy / screenSize.height) * frameW;
-                      final camY = (1.0 - (screen.dx / screenSize.width)) * frameH;
-                      return Offset(camX.clamp(0.0, frameW), camY.clamp(0.0, frameH));
+                      final camY =
+                          (1.0 - (screen.dx / screenSize.width)) * frameH;
+                      return Offset(
+                        camX.clamp(0.0, frameW),
+                        camY.clamp(0.0, frameH),
+                      );
                     } else {
                       final camX = (screen.dx / screenSize.width) * frameW;
                       final camY = (screen.dy / screenSize.height) * frameH;
-                      return Offset(camX.clamp(0.0, frameW), camY.clamp(0.0, frameH));
+                      return Offset(
+                        camX.clamp(0.0, frameW),
+                        camY.clamp(0.0, frameH),
+                      );
                     }
                   }
 
-                  final currentBoundary = _arucoBoundary ?? [
-                    Offset(frameW * 0.15, frameH * 0.15),
-                    Offset(frameW * 0.85, frameH * 0.15),
-                    Offset(frameW * 0.85, frameH * 0.85),
-                    Offset(frameW * 0.15, frameH * 0.85),
-                  ];
+                  final currentBoundary =
+                      _arucoBoundary ?? BoardAlignment.initial(frameW, frameH);
 
                   final labels = ['TL', 'TR', 'BR', 'BL'];
 
@@ -645,10 +703,13 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                             top: screenPos.dy - 22,
                             child: GestureDetector(
                               onPanUpdate: (details) {
+                                if (_savingBoard) return;
                                 final newScreen = screenPos + details.delta;
                                 final newCam = toCamera(newScreen);
                                 setState(() {
-                                  _arucoBoundary ??= List<Offset>.from(currentBoundary);
+                                  _arucoBoundary ??= List<Offset>.from(
+                                    currentBoundary,
+                                  );
                                   _arucoBoundary![i] = newCam;
                                 });
                               },
@@ -656,9 +717,14 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF00FF66).withValues(alpha: 0.90),
+                                  color: const Color(
+                                    0xFF00FF66,
+                                  ).withValues(alpha: 0.90),
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.black, width: 2.5),
+                                  border: Border.all(
+                                    color: Colors.black,
+                                    width: 2.5,
+                                  ),
                                   boxShadow: const [
                                     BoxShadow(
                                       color: Colors.black54,
@@ -728,7 +794,9 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                                 minHeight: 30,
                               ),
                               icon: Icon(
-                                _isBoundaryLocked ? Icons.lock : Icons.lock_open,
+                                _isBoundaryLocked
+                                    ? Icons.lock
+                                    : Icons.lock_open,
                                 color: _isBoundaryLocked
                                     ? const Color(0xFF00FF66)
                                     : Colors.orangeAccent,

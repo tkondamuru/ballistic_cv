@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import '../diagnostics/console_log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -13,9 +15,34 @@ class FrameSet {
 class FrameCapture extends ChangeNotifier {
   FrameCapture({
     MethodChannel? channel,
+    void Function(String)? log,
     this.duration = const Duration(seconds: 10),
-  }) : channel = channel ?? const MethodChannel('ballistic/frames');
+  }) : channel = channel ?? const MethodChannel('ballistic/frames'),
+       _log = log ?? consoleLog;
   final MethodChannel channel;
+  final void Function(String) _log;
+  int _sample = 0;
+  String? _scanId;
+
+  void _trace(String event, Map<String, Object?> data) {
+    _log(
+      '[ScanTrace] ${jsonEncode({'event': event, 'scanId': _scanId, ...data})}',
+    );
+  }
+
+  /// Log every processed sample, including samples whose PNG is skipped by
+  /// storage backpressure. Saved frame numbers are linked by the stored event.
+  int? traceSample(Map<String, Object?> data) {
+    if (!capturing) return null;
+    final sample = ++_sample;
+    _trace('sample', {
+      'sample': sample,
+      'timeUs': _clock.elapsedMicroseconds,
+      ...data,
+    });
+    return sample;
+  }
+
   final Duration duration;
   FrameSet? saved;
   bool loading = false, capturing = false, finishing = false;
@@ -56,9 +83,16 @@ class FrameCapture extends ChangeNotifier {
       count = 0;
       skipped = 0;
       _lastTime = -100000;
+      _sample = 0;
+      _scanId = DateTime.now().toUtc().microsecondsSinceEpoch.toString();
       capturing = true;
       _clock.reset();
       _clock.start();
+      _trace('start', {
+        'schema': 1,
+        'coordinateSpace': 'cameraPixels',
+        ...object,
+      });
       _timer = Timer.periodic(const Duration(milliseconds: 50), (_) {
         if (_clock.elapsed >= duration) unawaited(finish());
         changed();
@@ -94,6 +128,11 @@ class FrameCapture extends ChangeNotifier {
   Future<void> _write(Map<String, Object?> frame) async {
     try {
       count = await channel.invokeMethod<int>('frame', frame) ?? count;
+      _trace('stored', {
+        'frame': count,
+        'sample': frame['sample'],
+        'timeUs': frame['timeUs'],
+      });
     } catch (e, stack) {
       debugPrint('[Capture] Write failed: $e\n$stack');
       message = 'Capture stopped after $count frames: $e';
@@ -123,6 +162,13 @@ class FrameCapture extends ChangeNotifier {
     } catch (e) {
       message = 'Could not save scanned frames: $e';
     }
+    _trace('end', {
+      'storedFrames': count,
+      'skipped': skipped,
+      'samples': _sample,
+      'elapsedUs': _clock.elapsedMicroseconds,
+      'message': message,
+    });
     finishing = false;
     changed();
   }
