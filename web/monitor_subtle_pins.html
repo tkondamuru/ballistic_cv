@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desktop Monitor Target Surface (Light Black Corner Pins)</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+  }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background-color: #FFFFFF;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: background-color 0.3s ease;
+  }
+  body.dark-mode {
+    background-color: #111116;
+  }
+  
+  /* Subtle Dark Corner Target Pins */
+  .marker-pin {
+    position: absolute;
+    width: var(--pin-size, 48px);
+    height: var(--pin-size, 48px);
+    z-index: 10;
+    border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    transition: width 0.15s ease, height 0.15s ease, top 0.15s ease, bottom 0.15s ease, left 0.15s ease, right 0.15s ease, background-color 0.2s ease, opacity 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 0.5px;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    background-color: var(--pin-color, #222222);
+    opacity: var(--pin-opacity, 0.85);
+  }
+
+  /* Inner Crosshair Target Center */
+  .marker-pin::after {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #00FF66;
+    box-shadow: 0 0 6px #00FF66;
+  }
+  
+  #corner-tl {
+    top: var(--pin-margin, 20px);
+    left: var(--pin-margin, 20px);
+  }
+  #corner-tr {
+    top: var(--pin-margin, 20px);
+    right: var(--pin-margin, 20px);
+  }
+  #corner-br {
+    bottom: var(--pin-margin, 20px);
+    right: var(--pin-margin, 20px);
+  }
+  #corner-bl {
+    bottom: var(--pin-margin, 20px);
+    left: var(--pin-margin, 20px);
+  }
+
+  /* Interactive Shockwave Flash */
+  .shockwave {
+    position: absolute;
+    border-radius: 50%;
+    border: 6px solid #00FF66;
+    pointer-events: none;
+    animation: explode 0.5s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  }
+  @keyframes explode {
+    0% { width: 20px; height: 20px; opacity: 1; transform: translate(-50%, -50%); }
+    100% { width: 280px; height: 280px; opacity: 0; transform: translate(-50%, -50%); }
+  }
+
+  /* Floating Control Toolbar */
+  .toolbar {
+    position: fixed;
+    bottom: 25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 25, 0.88);
+    backdrop-filter: blur(12px);
+    color: white;
+    padding: 12px 26px;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 13px;
+    z-index: 100;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .toolbar.hidden {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+    pointer-events: none;
+  }
+  .toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .toolbar input[type="range"] {
+    cursor: pointer;
+  }
+  .btn {
+    background: #00FF66;
+    color: #051a0b;
+    border: none;
+    padding: 7px 16px;
+    border-radius: 16px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn:hover { background: #00cc52; transform: scale(1.03); }
+  
+  .hint {
+    position: fixed;
+    top: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 6px 18px;
+    border-radius: 12px;
+    font-size: 12px;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    z-index: 50;
+  }
+</style>
+</head>
+<body>
+
+  <div id="hint" class="hint">Double-click or press [F11] for Fullscreen | Controls fade on idle</div>
+
+  <!-- 4 Light Black Corner Pin Reference Circles -->
+  <div id="corner-tl" class="marker-pin">TL</div>
+  <div id="corner-tr" class="marker-pin">TR</div>
+  <div id="corner-bl" class="marker-pin">BL</div>
+  <div id="corner-br" class="marker-pin">BR</div>
+
+  <!-- Floating Control Bar -->
+  <div id="toolbar" class="toolbar">
+    <label>
+      Pin Size:
+      <input type="range" id="sizeSlider" min="24" max="120" value="48">
+      <span id="sizeLabel">48px</span>
+    </label>
+
+    <label>
+      Margin:
+      <input type="range" id="marginSlider" min="10" max="80" value="20">
+      <span id="marginLabel">20px</span>
+    </label>
+
+    <label>
+      Shade:
+      <select id="shadeSelect" class="btn" style="background: #2a2a35; color: #fff; padding: 5px 10px;">
+        <option value="#222222">Light Black (#222)</option>
+        <option value="#111111">Dark Black (#111)</option>
+        <option value="#444444">Grey Slate (#444)</option>
+        <option value="#00FFFF">Pure Cyan</option>
+      </select>
+    </label>
+
+    <button id="themeBtn" class="btn">Theme: Light</button>
+    <button id="fsBtn" class="btn">Fullscreen</button>
+  </div>
+
+  <script>
+    const body = document.body;
+    const toolbar = document.getElementById('toolbar');
+    const hint = document.getElementById('hint');
+
+    const sizeSlider = document.getElementById('sizeSlider');
+    const sizeLabel = document.getElementById('sizeLabel');
+    const marginSlider = document.getElementById('marginSlider');
+    const marginLabel = document.getElementById('marginLabel');
+    const shadeSelect = document.getElementById('shadeSelect');
+    const themeBtn = document.getElementById('themeBtn');
+    const fsBtn = document.getElementById('fsBtn');
+
+    let isDark = false;
+
+    // Size Slider
+    sizeSlider.addEventListener('input', (e) => {
+      const px = e.target.value;
+      document.documentElement.style.setProperty('--pin-size', `${px}px`);
+      sizeLabel.textContent = `${px}px`;
+    });
+
+    // Margin Slider
+    marginSlider.addEventListener('input', (e) => {
+      const px = e.target.value;
+      document.documentElement.style.setProperty('--pin-margin', `${px}px`);
+      marginLabel.textContent = `${px}px`;
+    });
+
+    // Shade Selector
+    shadeSelect.addEventListener('change', (e) => {
+      document.documentElement.style.setProperty('--pin-color', e.target.value);
+    });
+
+    // Background Theme Toggle
+    themeBtn.addEventListener('click', () => {
+      isDark = !isDark;
+      if (isDark) {
+        body.classList.add('dark-mode');
+        themeBtn.textContent = 'Theme: Dark';
+      } else {
+        body.classList.remove('dark-mode');
+        themeBtn.textContent = 'Theme: Light';
+      }
+    });
+
+    // Fullscreen Toggle
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    fsBtn.addEventListener('click', toggleFullscreen);
+    window.addEventListener('dblclick', (e) => {
+      if (!toolbar.contains(e.target)) {
+        toggleFullscreen();
+      }
+    });
+
+    // Shockwave click effect
+    window.addEventListener('click', (e) => {
+      if (toolbar.contains(e.target)) return;
+      const wave = document.createElement('div');
+      wave.className = 'shockwave';
+      wave.style.left = e.clientX + 'px';
+      wave.style.top = e.clientY + 'px';
+      document.body.appendChild(wave);
+      setTimeout(() => wave.remove(), 500);
+    });
+
+    // Controls Auto-Fade on Idle
+    let idleTimer;
+    function resetIdleTimer() {
+      toolbar.classList.remove('hidden');
+      hint.style.opacity = '1';
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        toolbar.classList.add('hidden');
+        hint.style.opacity = '0';
+      }, 4000);
+    }
+
+    window.addEventListener('mousemove', resetIdleTimer);
+    window.addEventListener('mousedown', resetIdleTimer);
+    window.addEventListener('touchstart', resetIdleTimer);
+    resetIdleTimer();
+  </script>
+</body>
+</html>
