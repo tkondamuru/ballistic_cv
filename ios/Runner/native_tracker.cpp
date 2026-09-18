@@ -246,12 +246,12 @@ static DetectionResult process_bgr(
     cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
     cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
 
-    // 5. Contour Extraction & Weighted Scoring (score = area * circularity).
+    // 5. Contour Extraction & Weighted Scoring (score = area * max(circularity, 0.05)).
     // Area and radius gates below use image pixels, not physical ball dimensions.
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-    double best_score = 0.0;
+    double best_score = -1.0;
     cv::Point2f best_center(0.0f, 0.0f);
     float best_radius = 0.0f;
     bool found_candidate = false;
@@ -274,8 +274,8 @@ static DetectionResult process_bgr(
             float radius = 0.0f;
             cv::minEnclosingCircle(c, center, radius);
 
-            double score = area * circularity;
-            if (radius >= 5.0f && radius <= 85.0f && score > best_score) {
+            double score = area * std::max(circularity, 0.05);
+            if (radius >= 3.0f && radius <= 85.0f && score > best_score) {
                 best_score = score;
                 best_center = center;
                 best_radius = radius;
