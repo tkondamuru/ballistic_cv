@@ -130,6 +130,17 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
         _zoomPreferences = await SharedPreferences.getInstance();
         _ignoreBelowBoard =
             _zoomPreferences!.getBool('thud_ignore_below_board') ?? false;
+        final relayUrl =
+            _zoomPreferences!.getString('thud_relay_url') ?? 'wss://mcp.agility-maint.net';
+        final relayRoom =
+            _zoomPreferences!.getString('thud_relay_room') ?? 'thud-room-1';
+        if (!ThudRelayService.instance.isConnected) {
+          unawaited(
+            ThudRelayService.instance.connect(relayUrl, room: relayRoom).then((_) {
+              if (mounted) setState(() {});
+            }),
+          );
+        }
         _zoom = (_zoomPreferences!.getDouble('play_zoom') ?? 1.0).clamp(
           _minZoom,
           _maxZoom,
@@ -243,6 +254,140 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     } finally {
       _savingBoard = false;
     }
+  }
+
+  Future<void> _showRelaySettingsDialog() async {
+    final prefs = _zoomPreferences ?? await SharedPreferences.getInstance();
+    final urlController = TextEditingController(
+      text: prefs.getString('thud_relay_url') ?? 'wss://mcp.agility-maint.net',
+    );
+    final roomController = TextEditingController(
+      text: prefs.getString('thud_relay_room') ?? 'thud-room-1',
+    );
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isConnected = ThudRelayService.instance.isConnected;
+          return AlertDialog(
+            backgroundColor: const Color(0xFF141824),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xFF00FF66), width: 1.5),
+            ),
+            title: Row(
+              children: [
+                Icon(
+                  isConnected ? Icons.cloud_done : Icons.cloud_off,
+                  color: isConnected
+                      ? const Color(0xFF00FF66)
+                      : Colors.orangeAccent,
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Cloud Relay Settings',
+                  style: TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: urlController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'WebSocket Relay URL',
+                    labelStyle: TextStyle(color: Colors.white70),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF00FF66)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: roomController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'Room ID',
+                    labelStyle: TextStyle(color: Colors.white70),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF00FF66)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () {
+                    urlController.text = 'wss://mcp.agility-maint.net';
+                    roomController.text = 'thud-room-1';
+                  },
+                  icon: const Icon(
+                    Icons.refresh,
+                    size: 16,
+                    color: Color(0xFF00FF66),
+                  ),
+                  label: const Text(
+                    'Reset to Default Preset',
+                    style: TextStyle(color: Color(0xFF00FF66), fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.white60),
+                ),
+              ),
+              if (isConnected)
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                  ),
+                  onPressed: () async {
+                    await ThudRelayService.instance.disconnect();
+                    if (mounted) setState(() {});
+                    setDialogState(() {});
+                  },
+                  child: const Text(
+                    'Disconnect',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                )
+              else
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00FF66),
+                  ),
+                  onPressed: () async {
+                    final u = urlController.text.trim();
+                    final r = roomController.text.trim();
+                    await prefs.setString('thud_relay_url', u);
+                    await prefs.setString('thud_relay_room', r);
+                    await ThudRelayService.instance.connect(u, room: r);
+                    if (mounted) setState(() {});
+                    if (ctx.mounted) Navigator.of(ctx).pop();
+                  },
+                  child: const Text(
+                    'Connect',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   void _processCameraFrame(CameraImage image) {
@@ -937,6 +1082,67 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
+              ),
+            ),
+
+            // 4.5. Cloud Relay Socket Toggle Button (Floating right side above Record)
+            Positioned(
+              right: 18,
+              bottom: 195,
+              child: Column(
+                children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.85),
+                      border: Border.all(
+                        color: ThudRelayService.instance.isConnected
+                            ? const Color(0xFF00FF66)
+                            : Colors.white24,
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        if (ThudRelayService.instance.isConnected)
+                          const BoxShadow(
+                            color: Color(0xFF00FF66),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          ),
+                      ],
+                    ),
+                    child: IconButton(
+                      tooltip: ThudRelayService.instance.isConnected
+                          ? 'Cloud Relay Connected (${ThudRelayService.instance.roomId}). Tap to configure.'
+                          : 'Cloud Relay Disconnected. Tap to connect to mcp.agility-maint.net',
+                      icon: Icon(
+                        ThudRelayService.instance.isConnected
+                            ? Icons.cloud_done
+                            : Icons.cloud_off,
+                        color: ThudRelayService.instance.isConnected
+                            ? const Color(0xFF00FF66)
+                            : Colors.white54,
+                        size: 24,
+                      ),
+                      onPressed: _showRelaySettingsDialog,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    ThudRelayService.instance.isConnected
+                        ? 'Relay ON'
+                        : 'Relay OFF',
+                    style: TextStyle(
+                      color: ThudRelayService.instance.isConnected
+                          ? const Color(0xFF00FF66)
+                          : Colors.white60,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      backgroundColor: Colors.black87,
+                    ),
+                  ),
+                ],
               ),
             ),
 
