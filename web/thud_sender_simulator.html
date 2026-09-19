@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BallisticCV · Thud Sender Simulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html {
+      width: 100%; height: 100%;
+      background: #0d0f18; color: #fff;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%; max-width: 600px;
+      background: #141824; border-radius: 16px;
+      border: 1px solid #2a3147; padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    h2 { color: #00ff66; margin-bottom: 6px; font-size: 20px; }
+    p { color: #8a94a6; font-size: 13px; margin-bottom: 16px; }
+
+    .control-group {
+      display: flex; gap: 8px; margin-bottom: 16px;
+    }
+
+    input, button {
+      background: #1c2233; border: 1px solid #2e3752;
+      color: #fff; padding: 10px 14px; border-radius: 8px;
+      font-size: 13px; outline: none;
+    }
+
+    input:focus { border-color: #00ff66; }
+
+    button {
+      background: #00ff66; color: #000; font-weight: 700;
+      cursor: pointer; transition: all 0.15s ease;
+    }
+    button:hover { background: #33ff88; box-shadow: 0 0 12px rgba(0,255,102,0.4); }
+
+    /* Interactive Pad */
+    .pad {
+      width: 100%; height: 260px;
+      background: radial-gradient(circle at center, #1b2236 0%, #0f1320 100%);
+      border: 2px dashed #00ff66; border-radius: 12px;
+      position: relative; cursor: crosshair;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px; overflow: hidden;
+    }
+
+    .pad-label {
+      color: rgba(255, 255, 255, 0.3); font-size: 14px; pointer-events: none; text-align: center;
+    }
+
+    .btn-row {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .btn-row button {
+      background: #252d45; color: #fff; border: 1px solid #3d496e; font-size: 12px; flex: 1; min-width: 110px;
+    }
+    .btn-row button:hover { background: #00ff66; color: #000; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 12px; background: #000;
+      font-size: 12px; font-weight: 600; margin-bottom: 12px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff4444; }
+    .dot.connected { background: #00ff66; box-shadow: 0 0 8px #00ff66; }
+
+    #log {
+      width: 100%; height: 120px; background: #0a0c12;
+      border: 1px solid #1f2638; border-radius: 8px; padding: 8px;
+      font-family: monospace; font-size: 11px; color: #00ff66;
+      overflow-y: auto; white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h2>🎯 Thud Sender Simulator</h2>
+    <p>Simulate mobile phone impact events over Cloudflare Durable Object Relay to test your laptop monitor tab.</p>
+
+    <div class="badge">
+      <div id="dot" class="dot"></div>
+      <span id="status">DISCONNECTED</span>
+    </div>
+
+    <div class="control-group">
+      <input type="text" id="url" style="flex: 2;" value="wss://mcp.agility-maint.net" placeholder="wss://mcp.agility-maint.net" />
+      <input type="text" id="room" style="flex: 1;" value="thud-room-1" placeholder="Room ID" />
+      <button id="connectBtn">Connect</button>
+    </div>
+
+    <div class="pad" id="pad">
+      <div class="pad-label">
+        CLICK ANYWHERE ON THIS BOARD<br>
+        <span style="font-size: 11px; color: #00ff66;">Sends (u, v) normalized hit to Cloudflare</span>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button onclick="sendHit(0.5, 0.5)">Center (0.5, 0.5)</button>
+      <button onclick="sendHit(0.15, 0.15)">Top-Left (0.15, 0.15)</button>
+      <button onclick="sendHit(0.85, 0.85)">Bottom-Right (0.85, 0.85)</button>
+      <button onclick="sendBurst()">Burst 5 Hits</button>
+    </div>
+
+    <div id="log">[System] Ready. Connect to Cloudflare and click pad to send simulated thud events.</div>
+  </div>
+
+  <script>
+    const urlInput = document.getElementById('url');
+    const roomInput = document.getElementById('room');
+    const connectBtn = document.getElementById('connectBtn');
+    const dot = document.getElementById('dot');
+    const status = document.getElementById('status');
+    const pad = document.getElementById('pad');
+    const logEl = document.getElementById('log');
+
+    let ws = null;
+    let hitCounter = 0;
+
+    function log(msg) {
+      logEl.innerText += `\n[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function connect() {
+      let raw = urlInput.value.trim();
+      const r = roomInput.value.trim() || 'thud-room-1';
+      if (!raw) return alert('Enter WebSocket URL');
+
+      if (raw.startsWith('http://')) raw = raw.replace('http://', 'ws://');
+      if (raw.startsWith('https://')) raw = raw.replace('https://', 'wss://');
+
+      const fullUrl = `${raw.replace(/\/$/, '')}/thud?room=${encodeURIComponent(r)}`;
+
+      if (ws) ws.close();
+      status.innerText = 'CONNECTING...';
+      dot.className = 'dot';
+
+      try {
+        ws = new WebSocket(fullUrl);
+        ws.onopen = () => {
+          status.innerText = `ONLINE (${r})`;
+          dot.className = 'dot connected';
+          log(`Connected to Cloudflare Worker: ${fullUrl}`);
+        };
+        ws.onclose = () => {
+          status.innerText = 'DISCONNECTED';
+          dot.className = 'dot';
+          log('WebSocket closed');
+        };
+        ws.onerror = (e) => {
+          status.innerText = 'ERROR';
+          dot.className = 'dot';
+          log('WebSocket error');
+        };
+      } catch (e) {
+        log(`Error: ${e.message}`);
+      }
+    }
+
+    function sendHit(u, v) {
+      if (!ws || ws.readyState !== 1) {
+        log('⚠️ SENDER NOT CONNECTED. Click Connect first.');
+        return;
+      }
+
+      hitCounter++;
+      const payload = {
+        type: 'hit',
+        hitNumber: hitCounter,
+        u: parseFloat(u.toFixed(4)),
+        v: parseFloat(v.toFixed(4)),
+        deflectionDegrees: Math.round(30 + Math.random() * 40),
+        timestampUs: Date.now() * 1000
+      };
+
+      ws.send(JSON.stringify(payload));
+      log(`➡️ OUTBOUND HIT #${hitCounter}: u=${payload.u}, v=${payload.v}, angle=${payload.deflectionDegrees}°`);
+
+      // Visual feedback dot on pad
+      const rect = pad.getBoundingClientRect();
+      const marker = document.createElement('div');
+      marker.style.cssText = `
+        position: absolute; left: ${u * rect.width - 8}px; top: ${v * rect.height - 8}px;
+        width: 16px; height: 16px; border-radius: 50%; background: #00ff66;
+        box-shadow: 0 0 12px #00ff66; pointer-events: none; transition: opacity 0.6s ease;
+      `;
+      pad.appendChild(marker);
+      setTimeout(() => { marker.style.opacity = '0'; setTimeout(() => marker.remove(), 600); }, 200);
+    }
+
+    function sendBurst() {
+      for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+          sendHit(0.2 + Math.random() * 0.6, 0.2 + Math.random() * 0.6);
+        }, i * 300);
+      }
+    }
+
+    pad.addEventListener('click', (e) => {
+      const rect = pad.getBoundingClientRect();
+      const u = (e.clientX - rect.left) / rect.width;
+      const v = (e.clientY - rect.top) / rect.height;
+      sendHit(u, v);
+    });
+
+    connectBtn.addEventListener('click', connect);
+  </script>
+</body>
+</html>

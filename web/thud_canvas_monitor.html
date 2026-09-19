@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BallisticCV · Proportional Thud Screen Monitor & Target Pins</title>
+  <style>
+    :root {
+      --pin-size: 48px;
+      --pin-margin: 24px;
+      --pin-color: #222222;
+      --pin-opacity: 0.85;
+      --bg-color: #FFFFFF;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-color: var(--bg-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Subtle Dark Corner Target Pins */
+    .marker-pin {
+      position: absolute;
+      width: var(--pin-size);
+      height: var(--pin-size);
+      z-index: 10;
+      border-radius: 50%;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+      transition: width 0.15s ease, height 0.15s ease, top 0.15s ease, bottom 0.15s ease, left 0.15s ease, right 0.15s ease, background-color 0.2s ease, opacity 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.85);
+      letter-spacing: 0.5px;
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      background-color: var(--pin-color);
+      opacity: var(--pin-opacity);
+    }
+
+    /* Inner Crosshair Target Center */
+    .marker-pin::after {
+      content: '';
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #00FF66;
+      box-shadow: 0 0 6px #00FF66;
+    }
+
+    #corner-tl { top: var(--pin-margin); left: var(--pin-margin); }
+    #corner-tr { top: var(--pin-margin); right: var(--pin-margin); }
+    #corner-br { bottom: var(--pin-margin); right: var(--pin-margin); }
+    #corner-bl { bottom: var(--pin-margin); left: var(--pin-margin); }
+
+    /* Control Toolbar (Bottom Floating Center) */
+    .toolbar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 17, 26, 0.92);
+      backdrop-filter: blur(12px);
+      color: white;
+      padding: 8px 18px;
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      z-index: 100;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(0, 255, 102, 0.3);
+      pointer-events: auto;
+    }
+
+    .toolbar label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff4444;
+      box-shadow: 0 0 6px #ff4444;
+    }
+    .dot.connected {
+      background: #00FF66;
+      box-shadow: 0 0 8px #00FF66;
+    }
+
+    .stats {
+      color: #FFEA00;
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    input[type="text"], input[type="range"], select {
+      background: #1a2030;
+      border: 1px solid #2d3752;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .btn {
+      background: #00FF66;
+      color: #051a0b;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 12px;
+      transition: all 0.15s ease;
+    }
+    .btn:hover {
+      background: #33ff88;
+      box-shadow: 0 0 10px rgba(0, 255, 102, 0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="canvas"></canvas>
+
+  <!-- 4 Light Black Corner Pins (Matching Phone Alignment Quad) -->
+  <div id="corner-tl" class="marker-pin">TL</div>
+  <div id="corner-tr" class="marker-pin">TR</div>
+  <div id="corner-bl" class="marker-pin">BL</div>
+  <div id="corner-br" class="marker-pin">BR</div>
+
+  <!-- Control Toolbar (Bottom Floating Center) -->
+  <div class="toolbar">
+    <div class="badge">
+      <div id="statusDot" class="dot"></div>
+      <span id="statusText">DISCONNECTED</span>
+    </div>
+
+    <input type="text" id="wsUrlInput" style="width: 210px;" value="wss://mcp.agility-maint.net" placeholder="wss://mcp.agility-maint.net" />
+    <input type="text" id="roomInput" style="width: 95px;" value="thud-room-1" placeholder="Room ID" />
+    <button id="connectBtn" class="btn">Connect</button>
+
+    <div class="badge stats" id="hitCountDisplay">
+      HITS: 0
+    </div>
+
+    <label style="border-left: 1px solid #334; padding-left: 10px;">
+      Size:
+      <input type="range" id="sizeSlider" min="24" max="100" value="48" style="width: 55px;">
+    </label>
+
+    <label>
+      Margin:
+      <input type="range" id="marginSlider" min="10" max="80" value="24" style="width: 55px;">
+    </label>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const hitCountDisplay = document.getElementById('hitCountDisplay');
+    const wsUrlInput = document.getElementById('wsUrlInput');
+    const roomInput = document.getElementById('roomInput');
+    const connectBtn = document.getElementById('connectBtn');
+
+    const sizeSlider = document.getElementById('sizeSlider');
+    const marginSlider = document.getElementById('marginSlider');
+
+    let socket = null;
+    let ripples = [];
+    let totalHits = 0;
+    let audioCtx = null;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Slider Controls
+    sizeSlider.addEventListener('input', (e) => {
+      document.documentElement.style.setProperty('--pin-size', `${e.target.value}px`);
+    });
+
+    marginSlider.addEventListener('input', (e) => {
+      document.documentElement.style.setProperty('--pin-margin', `${e.target.value}px`);
+    });
+
+    // Web Audio Synthesizer
+    function playThudSound() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(35, audioCtx.currentTime + 0.12);
+
+        gain.gain.setValueAtTime(0.85, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.14);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch (e) {}
+    }
+
+    // Proportional Hit Mapping: (u, v) in [0, 1]^2 -> Exact Pin-Bounded Screen Coordinates
+    function addImpact(u, v, angle) {
+      totalHits++;
+      hitCountDisplay.innerText = `HITS: ${totalHits}`;
+      playThudSound();
+
+      const margin = parseInt(marginSlider.value) || 24;
+      const targetWidth = canvas.width - (2 * margin);
+      const targetHeight = canvas.height - (2 * margin);
+
+      const screenX = margin + (u * targetWidth);
+      const screenY = margin + (v * targetHeight);
+
+      ripples.push({
+        x: screenX,
+        y: screenY,
+        radius: 10,
+        maxRadius: 180,
+        alpha: 1.0,
+        angle: angle || 45,
+        hitNum: totalHits
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw subtle proportional target rectangle connecting the 4 pins
+      const margin = parseInt(marginSlider.value) || 24;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 6]);
+      ctx.strokeRect(margin, margin, canvas.width - (2 * margin), canvas.height - (2 * margin));
+      ctx.setLineDash([]);
+
+      // Draw Ripples & Shockwaves
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const r = ripples[i];
+        r.radius += 4.5;
+        r.alpha -= 0.02;
+
+        if (r.alpha <= 0 || r.radius >= r.maxRadius) {
+          ripples.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, r.alpha);
+
+        // Neon Outer Shockwave Ring
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = '#00FF66';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#00FF66';
+        ctx.shadowBlur = 18;
+        ctx.stroke();
+
+        // Secondary Radial Glow Ring
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, r.radius * 0.6, 0, Math.PI * 2);
+        ctx.strokeStyle = '#FFEA00';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#FFEA00';
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+
+        // Center Bullseye Reticle
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#00FF66';
+        ctx.fill();
+
+        // Hit Badge Text
+        ctx.fillStyle = '#009933';
+        ctx.font = 'bold 15px monospace';
+        ctx.fillText(`THUD #${r.hitNum} (${Math.round(r.angle)}°)`, r.x + 16, r.y - 16);
+
+        ctx.restore();
+      }
+
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    // WebSocket Connection Handler
+    function connect() {
+      let rawUrl = wsUrlInput.value.trim();
+      const room = roomInput.value.trim() || 'thud-room-1';
+
+      if (!rawUrl) return alert('Enter Cloudflare Worker WebSocket URL');
+
+      if (rawUrl.startsWith('http://')) rawUrl = rawUrl.replace('http://', 'ws://');
+      if (rawUrl.startsWith('https://')) rawUrl = rawUrl.replace('https://', 'wss://');
+
+      const fullUrl = `${rawUrl.replace(/\/$/, '')}/thud?room=${encodeURIComponent(room)}`;
+
+      if (socket) socket.close();
+
+      statusText.innerText = 'CONNECTING…';
+      statusDot.className = 'dot';
+
+      try {
+        socket = new WebSocket(fullUrl);
+
+        socket.onopen = () => {
+          statusText.innerText = `ONLINE (${room})`;
+          statusDot.className = 'dot connected';
+          console.log('[Thud Monitor] Connected to Cloudflare Relay:', fullUrl);
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'hit' || (data.u !== undefined && data.v !== undefined)) {
+              addImpact(data.u, data.v, data.deflectionDegrees);
+            }
+          } catch (e) {
+            console.error('Invalid message:', event.data);
+          }
+        };
+
+        socket.onclose = () => {
+          statusText.innerText = 'DISCONNECTED';
+          statusDot.className = 'dot';
+        };
+
+        socket.onerror = (err) => {
+          statusText.innerText = 'ERROR';
+          statusDot.className = 'dot';
+        };
+      } catch (e) {
+        alert('Could not connect to WebSocket: ' + e.message);
+      }
+    }
+
+    connectBtn.addEventListener('click', connect);
+
+    // Canvas click to test hit locally
+    canvas.addEventListener('click', (e) => {
+      const margin = parseInt(marginSlider.value) || 24;
+      const targetWidth = canvas.width - (2 * margin);
+      const targetHeight = canvas.height - (2 * margin);
+      const u = (e.clientX - margin) / targetWidth;
+      const v = (e.clientY - margin) / targetHeight;
+      addImpact(u, v, 45);
+    });
+  </script>
+</body>
+</html>

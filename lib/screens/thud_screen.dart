@@ -10,6 +10,8 @@ import '../models/hsv_profile.dart';
 import '../models/board_alignment.dart';
 import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
+import '../geometry/homography.dart';
+import '../services/thud_relay_service.dart';
 import '../widgets/thud_painter.dart';
 import '../widgets/tracking_painter.dart';
 import '../widgets/zoom_button.dart';
@@ -382,9 +384,19 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                 deflectionDegrees: impact.angleDegrees,
               ),
             );
+
+            // Compute normalized (u, v) relative to 4 corner pins and broadcast over Cloudflare Relay
+            final normalized = Homography.normalize(impact.position, currentQuad);
+            ThudRelayService.instance.sendHit(
+              normalizedPos: normalized,
+              deflectionDegrees: impact.angleDegrees,
+              hitNumber: hitNum,
+            );
+
             debugPrint(
               '[Thud] IMPACT CANDIDATE #$hitNum at '
               '(${impact.position.dx.toStringAsFixed(1)}, ${impact.position.dy.toStringAsFixed(1)}); '
+              'normalized=(${normalized.dx.toStringAsFixed(3)}, ${normalized.dy.toStringAsFixed(3)}); '
               'angle=${impact.angleDegrees.toStringAsFixed(1)}°, '
               'confirmationDelay=${now.difference(impact.timestamp).inMilliseconds}ms',
             );
