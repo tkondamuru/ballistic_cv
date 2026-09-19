@@ -75,90 +75,121 @@
     #corner-br { bottom: var(--pin-margin); right: var(--pin-margin); }
     #corner-bl { bottom: var(--pin-margin); left: var(--pin-margin); }
 
-    /* Control Toolbar (Bottom Floating Center) */
+    /* Control Toolbar (Bottom Floating Expanded Center) */
     .toolbar {
       position: fixed;
-      bottom: 20px;
+      bottom: 16px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(15, 17, 26, 0.92);
+      background: rgba(15, 17, 26, 0.94);
       backdrop-filter: blur(12px);
       color: white;
-      padding: 8px 18px;
-      border-radius: 24px;
+      padding: 8px 16px;
+      border-radius: 20px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       font-size: 12px;
       z-index: 100;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-      border: 1px solid rgba(0, 255, 102, 0.3);
+      border: 1px solid rgba(0, 255, 102, 0.35);
       pointer-events: auto;
+      max-width: 96vw;
+      flex-wrap: nowrap;
     }
 
     .toolbar label {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       cursor: pointer;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 12px;
-      border-radius: 14px;
-      background: rgba(0, 0, 0, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      font-size: 11px;
-      font-weight: 600;
-      color: #fff;
+      white-space: nowrap;
     }
 
     .dot {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background: #ff4444;
-      box-shadow: 0 0 6px #ff4444;
+      box-shadow: 0 0 8px #ff4444;
+      flex-shrink: 0;
+      cursor: help;
     }
     .dot.connected {
       background: #00FF66;
-      box-shadow: 0 0 8px #00FF66;
+      box-shadow: 0 0 10px #00FF66;
     }
 
     .stats {
       color: #FFEA00;
       font-family: monospace;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
+      white-space: nowrap;
     }
 
-    input[type="text"], input[type="range"], select {
+    input[type="text"], input[type="number"], input[type="range"], select {
       background: #1a2030;
       border: 1px solid #2d3752;
       color: #fff;
-      padding: 6px 10px;
-      border-radius: 8px;
+      padding: 5px 8px;
+      border-radius: 6px;
       font-size: 12px;
       outline: none;
+    }
+
+    input[type="number"] {
+      -moz-appearance: textfield;
+      text-align: center;
+    }
+    input[type="number"]::-webkit-inner-spin-button, 
+    input[type="number"]::-webkit-outer-spin-button { 
+      -webkit-appearance: none; 
+      margin: 0; 
     }
 
     .btn {
       background: #00FF66;
       color: #051a0b;
       border: none;
-      padding: 6px 12px;
-      border-radius: 10px;
+      padding: 5px 12px;
+      border-radius: 8px;
       cursor: pointer;
       font-weight: 700;
       font-size: 12px;
+      white-space: nowrap;
       transition: all 0.15s ease;
     }
     .btn:hover {
       background: #33ff88;
       box-shadow: 0 0 10px rgba(0, 255, 102, 0.4);
+    }
+
+    .step-btn {
+      background: #252d45;
+      color: #00FF66;
+      border: 1px solid #3d496e;
+      border-radius: 4px;
+      width: 20px;
+      height: 24px;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .step-btn:hover {
+      background: #00FF66;
+      color: #000;
+    }
+
+    .divider {
+      width: 1px;
+      height: 20px;
+      background: #333d54;
+      margin: 0 2px;
     }
   </style>
 </head>
@@ -174,27 +205,46 @@
 
   <!-- Control Toolbar (Bottom Floating Center) -->
   <div class="toolbar">
-    <div class="badge">
-      <div id="statusDot" class="dot"></div>
-      <span id="statusText">DISCONNECTED</span>
-    </div>
+    <!-- Red/Green Bulb Status Indicator (No Text) -->
+    <div id="statusDot" class="dot" title="Disconnected. Click Connect to link relay."></div>
 
-    <input type="text" id="wsUrlInput" style="width: 210px;" value="wss://mcp.agility-maint.net" placeholder="wss://mcp.agility-maint.net" />
-    <input type="text" id="roomInput" style="width: 95px;" value="thud-room-1" placeholder="Room ID" />
+    <!-- Connection Config (wss:// prefix omitted in display) -->
+    <input type="text" id="wsUrlInput" style="width: 175px;" value="mcp.agility-maint.net" placeholder="mcp.agility-maint.net" />
+    <input type="text" id="roomInput" style="width: 85px;" value="thud-room-1" placeholder="Room ID" />
     <button id="connectBtn" class="btn">Connect</button>
 
-    <div class="badge stats" id="hitCountDisplay">
-      HITS: 0
-    </div>
+    <div class="divider"></div>
 
-    <label style="border-left: 1px solid #334; padding-left: 10px;">
-      Size:
-      <input type="range" id="sizeSlider" min="24" max="100" value="48" style="width: 55px;">
+    <span class="stats" id="hitCountDisplay">HITS: 0</span>
+
+    <div class="divider"></div>
+
+    <!-- Fine-Tuning Spatial Calibration Offsets -->
+    <label title="Calibrate horizontal impact alignment">
+      Off X:
+      <button class="step-btn" onclick="stepOffset('X', -2)">-</button>
+      <input type="number" id="offsetXInput" value="0" min="-200" max="200" style="width: 48px;">
+      <button class="step-btn" onclick="stepOffset('X', 2)">+</button>
     </label>
 
-    <label>
+    <label title="Calibrate vertical impact alignment">
+      Off Y:
+      <button class="step-btn" onclick="stepOffset('Y', -2)">-</button>
+      <input type="number" id="offsetYInput" value="0" min="-200" max="200" style="width: 48px;">
+      <button class="step-btn" onclick="stepOffset('Y', 2)">+</button>
+    </label>
+
+    <div class="divider"></div>
+
+    <!-- Pin Geometry Adjustments -->
+    <label title="Corner Target Pin Size">
+      Size:
+      <input type="range" id="sizeSlider" min="24" max="100" value="48" style="width: 45px;">
+    </label>
+
+    <label title="Corner Pin Edge Margin">
       Margin:
-      <input type="range" id="marginSlider" min="10" max="80" value="24" style="width: 55px;">
+      <input type="range" id="marginSlider" min="10" max="80" value="24" style="width: 45px;">
     </label>
   </div>
 
@@ -203,12 +253,13 @@
     const ctx = canvas.getContext('2d');
 
     const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
     const hitCountDisplay = document.getElementById('hitCountDisplay');
     const wsUrlInput = document.getElementById('wsUrlInput');
     const roomInput = document.getElementById('roomInput');
     const connectBtn = document.getElementById('connectBtn');
 
+    const offsetXInput = document.getElementById('offsetXInput');
+    const offsetYInput = document.getElementById('offsetYInput');
     const sizeSlider = document.getElementById('sizeSlider');
     const marginSlider = document.getElementById('marginSlider');
 
@@ -217,6 +268,32 @@
     let totalHits = 0;
     let audioCtx = null;
 
+    // Restore Saved Calibration Settings from localStorage
+    function loadSavedSettings() {
+      if (localStorage.getItem('thud_off_x') !== null) offsetXInput.value = localStorage.getItem('thud_off_x');
+      if (localStorage.getItem('thud_off_y') !== null) offsetYInput.value = localStorage.getItem('thud_off_y');
+      if (localStorage.getItem('thud_ws_url') !== null) wsUrlInput.value = localStorage.getItem('thud_ws_url');
+      if (localStorage.getItem('thud_room') !== null) roomInput.value = localStorage.getItem('thud_room');
+      if (localStorage.getItem('thud_pin_size') !== null) {
+        sizeSlider.value = localStorage.getItem('thud_pin_size');
+        document.documentElement.style.setProperty('--pin-size', `${sizeSlider.value}px`);
+      }
+      if (localStorage.getItem('thud_pin_margin') !== null) {
+        marginSlider.value = localStorage.getItem('thud_pin_margin');
+        document.documentElement.style.setProperty('--pin-margin', `${marginSlider.value}px`);
+      }
+    }
+    loadSavedSettings();
+
+    function saveSettings() {
+      localStorage.setItem('thud_off_x', offsetXInput.value);
+      localStorage.setItem('thud_off_y', offsetYInput.value);
+      localStorage.setItem('thud_ws_url', wsUrlInput.value);
+      localStorage.setItem('thud_room', roomInput.value);
+      localStorage.setItem('thud_pin_size', sizeSlider.value);
+      localStorage.setItem('thud_pin_margin', marginSlider.value);
+    }
+
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -224,13 +301,25 @@
     window.addEventListener('resize', resize);
     resize();
 
-    // Slider Controls
+    // Offset Step Helper (- / + buttons)
+    function stepOffset(axis, delta) {
+      const el = axis === 'X' ? offsetXInput : offsetYInput;
+      let val = (parseInt(el.value) || 0) + delta;
+      el.value = Math.max(-200, Math.min(200, val));
+      saveSettings();
+    }
+
+    offsetXInput.addEventListener('input', saveSettings);
+    offsetYInput.addEventListener('input', saveSettings);
+
     sizeSlider.addEventListener('input', (e) => {
       document.documentElement.style.setProperty('--pin-size', `${e.target.value}px`);
+      saveSettings();
     });
 
     marginSlider.addEventListener('input', (e) => {
       document.documentElement.style.setProperty('--pin-margin', `${e.target.value}px`);
+      saveSettings();
     });
 
     // Web Audio Synthesizer
@@ -257,7 +346,7 @@
       } catch (e) {}
     }
 
-    // Proportional Hit Mapping: (u, v) in [0, 1]^2 -> Exact Pin-Bounded Screen Coordinates
+    // Proportional Hit Mapping with Calibrated Offset Adjustments
     function addImpact(u, v, angle) {
       totalHits++;
       hitCountDisplay.innerText = `HITS: ${totalHits}`;
@@ -267,8 +356,11 @@
       const targetWidth = canvas.width - (2 * margin);
       const targetHeight = canvas.height - (2 * margin);
 
-      const screenX = margin + (u * targetWidth);
-      const screenY = margin + (v * targetHeight);
+      const offX = parseInt(offsetXInput.value) || 0;
+      const offY = parseInt(offsetYInput.value) || 0;
+
+      const screenX = margin + (u * targetWidth) + offX;
+      const screenY = margin + (v * targetHeight) + offY;
 
       ripples.push({
         x: screenX,
@@ -349,22 +441,24 @@
 
       if (!rawUrl) return alert('Enter Cloudflare Worker WebSocket URL');
 
-      if (rawUrl.startsWith('http://')) rawUrl = rawUrl.replace('http://', 'ws://');
-      if (rawUrl.startsWith('https://')) rawUrl = rawUrl.replace('https://', 'wss://');
+      if (!rawUrl.startsWith('ws://') && !rawUrl.startsWith('wss://')) {
+        rawUrl = `wss://${rawUrl}`;
+      }
 
       const fullUrl = `${rawUrl.replace(/\/$/, '')}/thud?room=${encodeURIComponent(room)}`;
 
       if (socket) socket.close();
 
-      statusText.innerText = 'CONNECTING…';
       statusDot.className = 'dot';
+      statusDot.title = `Connecting to ${fullUrl}…`;
 
       try {
         socket = new WebSocket(fullUrl);
 
         socket.onopen = () => {
-          statusText.innerText = `ONLINE (${room})`;
           statusDot.className = 'dot connected';
+          statusDot.title = `ONLINE (${room}) - Connected to ${fullUrl}`;
+          saveSettings();
           console.log('[Thud Monitor] Connected to Cloudflare Relay:', fullUrl);
         };
 
@@ -380,13 +474,13 @@
         };
 
         socket.onclose = () => {
-          statusText.innerText = 'DISCONNECTED';
           statusDot.className = 'dot';
+          statusDot.title = 'DISCONNECTED. Click Connect to link relay.';
         };
 
         socket.onerror = (err) => {
-          statusText.innerText = 'ERROR';
           statusDot.className = 'dot';
+          statusDot.title = 'CONNECTION ERROR';
         };
       } catch (e) {
         alert('Could not connect to WebSocket: ' + e.message);

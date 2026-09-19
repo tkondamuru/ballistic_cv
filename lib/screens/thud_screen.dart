@@ -12,6 +12,7 @@ import '../models/thud_hit.dart';
 import '../native/native_cv.dart';
 import '../geometry/homography.dart';
 import '../services/thud_relay_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../widgets/thud_painter.dart';
 import '../widgets/tracking_painter.dart';
 import '../widgets/zoom_button.dart';
@@ -71,6 +72,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     _capture.addListener(_captureChanged);
     if (Platform.isIOS) unawaited(_capture.load());
     NativeTracker.instance.resetKalmanTracker();
+    unawaited(WakelockPlus.enable());
     _initCamera();
   }
 
@@ -718,6 +720,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _capture.removeListener(_captureChanged);
     _controller?.dispose();
+    unawaited(WakelockPlus.disable());
     super.dispose();
   }
 
