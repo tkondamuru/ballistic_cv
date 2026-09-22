@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thud Ball - Multi-Game Interactive Wall Hub</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #e2e8f0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #0f172a;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle at center, #ffffff 0%, #f1f5f9 60%, #cbd5e1 100%);
+    }
+
+    /* High-Contrast Corner Alignment Quad Markers for Light Background */
+    .marker-pin {
+      position: absolute; width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(15, 23, 42, 0.88); border: 2px solid #0284c7;
+      color: #38bdf8; font-size: 11px; font-weight: 900;
+      display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 10;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      transition: width 0.1s, height 0.1s, font-size 0.1s;
+    }
+    #corner-tl { top: 24px; left: 24px; }
+    #corner-tr { top: 24px; right: 24px; }
+    #corner-bl { bottom: 60px; left: 24px; }
+    #corner-br { bottom: 60px; right: 24px; }
+
+    /* HUD Header Stats Card */
+    .hud-header {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 16px; z-index: 100; pointer-events: none; align-items: center;
+    }
+    .hud-card {
+      background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15); padding: 8px 24px; border-radius: 20px;
+      display: flex; flex-direction: column; align-items: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); color: #fff;
+    }
+    .hud-label { font-size: 10px; text-transform: uppercase; color: #94a3b8; font-weight: 800; letter-spacing: 0.8px; }
+    .hud-value { font-size: 18px; font-weight: 900; color: #38bdf8; text-shadow: 0 0 10px rgba(56, 189, 248, 0.4); }
+
+    /* Calibration Banner HUD */
+    .calib-banner {
+      position: fixed; top: 76px; left: 50%; transform: translateX(-50%);
+      background: rgba(245, 158, 11, 0.95); backdrop-filter: blur(10px);
+      color: #0f172a; padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 700;
+      z-index: 200; box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4); pointer-events: none; white-space: nowrap;
+    }
+
+    /* Centered Victory Badge */
+    .victory-badge {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(15, 23, 42, 0.96); backdrop-filter: blur(16px); color: #38bdf8;
+      padding: 24px 48px; border-radius: 28px; font-size: 22px; font-weight: 900;
+      z-index: 200; box-shadow: 0 8px 40px rgba(56, 189, 248, 0.5); border: 2px solid rgba(56, 189, 248, 0.7);
+      display: flex; flex-direction: column; align-items: center; gap: 8px; animation: pulseBlue 2s infinite ease-in-out; pointer-events: none;
+    }
+    @keyframes pulseBlue {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
+      50% { transform: translate(-50%, -50%) scale(1.04); box-shadow: 0 0 40px rgba(56, 189, 248, 0.8); }
+    }
+
+    /* Bottom Control Toolbar */
+    .toolbar {
+      position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 30px;
+      padding: 6px 16px; display: flex; align-items: center; gap: 10px; z-index: 100;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); max-width: 98vw; flex-wrap: nowrap; overflow-x: auto; color: #fff;
+    }
+    .status-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #94a3b8; cursor: pointer; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff4757; transition: all 0.3s; flex-shrink: 0; box-shadow: 0 0 8px #ff4757; }
+    .dot.connected { background: #2ed573; box-shadow: 0 0 10px #2ed573; }
+
+    .divider { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.12); margin: 0 2px; flex-shrink: 0; }
+
+    .input-group { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #cbd5e1; white-space: nowrap; flex-shrink: 0; }
+    .input-group label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; font-weight: 800; }
+    .input-group input[type="text"], .input-group input[type="number"] {
+      background: #1e293b; border: 1px solid #334155; color: #fff; padding: 4px 6px; border-radius: 6px; font-size: 11px; outline: none;
+    }
+    input[type="number"] { -moz-appearance: textfield; text-align: center; }
+    input[type="range"] { accent-color: #3b82f6; cursor: pointer; }
+
+    .val-readout { font-family: monospace; font-size: 11px; color: #38bdf8; min-width: 28px; text-align: right; }
+
+    .game-options-container {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+
+    .step-btn {
+      background: #334155; color: #f8fafc; border: 1px solid #475569; border-radius: 4px;
+      width: 18px; height: 20px; font-weight: bold; font-size: 12px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1;
+    }
+    .step-btn:hover { background: #475569; }
+
+    .btn {
+      background: #3b82f6; color: #fff; border: none; padding: 5px 12px; border-radius: 10px;
+      cursor: pointer; font-weight: 700; font-size: 12px; white-space: nowrap; transition: all 0.15s ease;
+      display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+    }
+    .btn:hover { background: #2563eb; transform: translateY(-1px); }
+    .btn-menu { background: #8b5cf6; }
+    .btn-menu:hover { background: #7c3aed; }
+    .btn-calib { background: #f59e0b; color: #0f172a; }
+    .btn-calib:hover { background: #d97706; color: #fff; }
+    .btn-calib.active { background: #ef4444; color: #fff; box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+
+    /* Fixed Body-Level Collapsible WS Settings Popover */
+    .ws-popover {
+      position: fixed; bottom: 65px; right: 20px; background: rgba(15, 23, 42, 0.96); backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 18px; padding: 16px 20px;
+      display: flex; flex-direction: column; gap: 12px; z-index: 500; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      opacity: 0; pointer-events: none; transform: translateY(10px); transition: all 0.2s ease; width: 280px; color: #fff;
+    }
+    .ws-popover.open { opacity: 1; pointer-events: auto; transform: translateY(0); }
+    .ws-popover-title { font-size: 12px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Drawer Hamburger Menu */
+    .drawer-overlay {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);
+      z-index: 300; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+    }
+    .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+
+    .drawer {
+      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%) translateY(100%);
+      width: 90%; max-width: 540px; background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 24px 24px 0 0;
+      padding: 24px; z-index: 310; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5); color: #fff;
+    }
+    .drawer.open { transform: translateX(-50%) translateY(0); }
+
+    .drawer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 12px; }
+    .drawer-title { font-size: 16px; font-weight: 800; color: #f8fafc; display: flex; align-items: center; gap: 8px; }
+    .drawer-close { background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; }
+    .drawer-close:hover { color: #fff; }
+
+    .games-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .game-card {
+      background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px; padding: 14px; cursor: pointer; transition: all 0.2s ease;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .game-card:hover { background: rgba(51, 65, 85, 0.9); border-color: #38bdf8; transform: translateY(-2px); }
+    .game-card-title { font-size: 14px; font-weight: 800; color: #f1f5f9; }
+    .game-card-desc { font-size: 11px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+  <canvas id="canvas"></canvas>
+
+  <!-- HUD Header Card -->
+  <div class="hud-header">
+    <div class="hud-card">
+      <span id="currentGameTitle" class="hud-label">bug_squash</span>
+      <span id="hudStatsText" class="hud-value">🦟 SQUASHED: 0/5</span>
+    </div>
+  </div>
+
+  <!-- Calibration Banner HUD -->
+  <div id="calibBanner" class="calib-banner" style="display: none;">
+    📌 <b>CALIBRATION MODE</b>: Hit wall with ball (or <b>CTRL+Click</b>). Drag line from THUD to target point. Press <b>ENTER</b> to fix offset, <b>ESC</b> to erase line. Click <b>📌 CALIB ON</b> to exit.
+  </div>
+
+  <!-- Victory Badge -->
+  <div id="victoryBadge" class="victory-badge" style="display: none;">
+    <span id="victoryText">🏆 YOU WIN!</span>
+  </div>
+
+  <!-- Corner Pins -->
+  <div id="corner-tl" class="marker-pin">TL</div>
+  <div id="corner-tr" class="marker-pin">TR</div>
+  <div id="corner-bl" class="marker-pin">BL</div>
+  <div id="corner-br" class="marker-pin">BR</div>
+
+  <!-- Control Toolbar -->
+  <div class="toolbar">
+    <button id="menuBtn" class="btn btn-menu" title="Select interactive game">☰ Games</button>
+
+    <div id="statusBadge" class="status-badge" title="WebSocket status. Click to open connection settings.">
+      <div id="statusDot" class="dot"></div>
+    </div>
+
+    <button id="calibBtn" class="btn btn-calib" title="Spatial Vector Calibration Mode">📌 Calib</button>
+
+    <div class="divider"></div>
+
+    <!-- Fine-Tuning Spatial Calibration Offsets -->
+    <div class="input-group" title="Calibrate horizontal impact offset">
+      <label>Off X:</label>
+      <button class="step-btn" data-step-axis="X" data-step-delta="-2">-</button>
+      <input type="number" id="offsetX" value="0" min="-200" max="200" style="width: 44px;">
+      <button class="step-btn" data-step-axis="X" data-step-delta="2">+</button>
+    </div>
+
+    <div class="input-group" title="Calibrate vertical impact offset">
+      <label>Off Y:</label>
+      <button class="step-btn" data-step-axis="Y" data-step-delta="-2">-</button>
+      <input type="number" id="offsetY" value="0" min="-200" max="200" style="width: 44px;">
+      <button class="step-btn" data-step-axis="Y" data-step-delta="2">+</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Spatial Margin & Pin Size Sliders -->
+    <div class="input-group" title="Corner Target Pin Edge Margin">
+      <label>Margin:</label>
+      <input type="range" id="marginSlider" min="10" max="80" value="24" style="width: 50px;">
+      <span id="marginVal" class="val-readout">24px</span>
+    </div>
+
+    <div class="input-group" title="Corner Target Marker Size">
+      <label>Pin Size:</label>
+      <input type="range" id="pinSizeSlider" min="20" max="100" value="36" style="width: 50px;">
+      <span id="pinSizeVal" class="val-readout">36px</span>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- DYNAMIC GAME-SPECIFIC OPTIONS PLACEHOLDER -->
+    <div id="gameOptionsContainer" class="game-options-container"></div>
+
+    <div class="divider"></div>
+
+    <!-- Connection Toggle & Popover for WS URL / Room -->
+    <button id="wsToggleBtn" class="btn" style="background: #334155;" title="WebSocket Connection Settings">📡 WS</button>
+  </div>
+
+  <!-- Collapsible WebSocket Popover (Fixed at Body Level) -->
+  <div id="wsPopover" class="ws-popover">
+    <div class="ws-popover-title">📡 WebSocket Connection</div>
+    <div class="input-group" style="flex-direction: column; align-items: flex-start; width: 100%;">
+      <label>Relay URL:</label>
+      <input type="text" id="wsUrl" value="mcp.agility-maint.net" style="width: 100%;">
+    </div>
+    <div class="input-group" style="flex-direction: column; align-items: flex-start; width: 100%;">
+      <label>Room ID:</label>
+      <input type="text" id="roomInput" value="thud-room-1" style="width: 100%;">
+    </div>
+    <button id="connectBtn" class="btn" style="width: 100%; justify-content: center; margin-top: 4px;">Connect WebSocket</button>
+  </div>
+
+  <!-- Game Launcher Drawer Overlay -->
+  <div id="drawerOverlay" class="drawer-overlay"></div>
+  <div id="drawer" class="drawer">
+    <div class="drawer-header">
+      <div class="drawer-title">🎮 Select Interactive Wall Game</div>
+      <button id="drawerClose" class="drawer-close">&times;</button>
+    </div>
+    <div class="games-grid">
+      <div class="game-card" data-game-id="bug_squash">
+        <div class="game-card-title">🦟 Bug Squasher</div>
+        <div class="game-card-desc">Squash fast-moving mosquito targets on the wall!</div>
+      </div>
+      <div class="game-card" data-game-id="balloon_pop">
+        <div class="game-card-title">🎈 Balloon Pop</div>
+        <div class="game-card-desc">Pop floating balloons and score high combo streaks!</div>
+      </div>
+      <div class="game-card" data-game-id="breakout">
+        <div class="game-card-title">🧱 Wall Breaker</div>
+        <div class="game-card-desc">Smash brick formations with precise ball thuds!</div>
+      </div>
+      <div class="game-card" data-game-id="bullseye">
+        <div class="game-card-title">🎯 Target Bullseye</div>
+        <div class="game-card-desc">Precision target training with distance error tracking.</div>
+      </div>
+      <div class="game-card" data-game-id="color_paint">
+        <div class="game-card-title">🎨 Neon Paint Splatters</div>
+        <div class="game-card-desc">Turn the wall into a dynamic glowing neon paint canvas!</div>
+      </div>
+      <div class="game-card" data-game-id="math_blaster">
+        <div class="game-card-title">🧮 Math Blaster Quiz</div>
+        <div class="game-card-desc">Interactive kids arithmetic game: hit the right bubble!</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ThudHubCore } from './js/hub_core.js';
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const core = new ThudHubCore();
+      core.init();
+
+      // Drawer Toggle Controls
+      const menuBtn = document.getElementById('menuBtn');
+      const drawer = document.getElementById('drawer');
+      const drawerOverlay = document.getElementById('drawerOverlay');
+      const drawerClose = document.getElementById('drawerClose');
+
+      function openDrawer() {
+        drawer.classList.add('open');
+        drawerOverlay.classList.add('open');
+      }
+
+      function closeDrawer() {
+        drawer.classList.remove('open');
+        drawerOverlay.classList.remove('open');
+      }
+
+      menuBtn.addEventListener('click', openDrawer);
+      drawerClose.addEventListener('click', closeDrawer);
+      drawerOverlay.addEventListener('click', closeDrawer);
+    });
+  </script>
+</body>
+</html>

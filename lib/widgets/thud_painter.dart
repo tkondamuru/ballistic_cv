@@ -21,6 +21,65 @@ class ActiveSplash {
   });
 }
 
+class FrameHitEstimate {
+  final double framesToHit;
+  final double msToHit;
+  final Offset intersectionPoint;
+
+  FrameHitEstimate({
+    required this.framesToHit,
+    required this.msToHit,
+    required this.intersectionPoint,
+  });
+}
+
+/// Calculates analytical ray intersection between ball trajectory and wall boundary quad
+FrameHitEstimate? calculateFramesToHit({
+  required Offset ballPos,
+  required Offset ballVel,
+  required List<Offset> quad,
+  required double fps,
+}) {
+  final speed = ballVel.distance;
+  if (speed < 0.5 || quad.length != 4) return null;
+
+  double? minT;
+  Offset? bestIntersection;
+
+  for (int i = 0; i < 4; i++) {
+    final a = quad[i];
+    final b = quad[(i + 1) % 4];
+
+    final vx = ballVel.dx;
+    final vy = ballVel.dy;
+    final dx = b.dx - a.dx;
+    final dy = b.dy - a.dy;
+
+    final denom = vx * dy - vy * dx;
+    if (denom.abs() < 0.0001) continue;
+
+    final t = ((a.dx - ballPos.dx) * dy - (a.dy - ballPos.dy) * dx) / denom;
+    final s = ((a.dx - ballPos.dx) * vy - (a.dy - ballPos.dy) * vx) / denom;
+
+    if (t > 0 && s >= 0.0 && s <= 1.0) {
+      if (minT == null || t < minT) {
+        minT = t;
+        bestIntersection = Offset(ballPos.dx + t * vx, ballPos.dy + t * vy);
+      }
+    }
+  }
+
+  if (minT != null && bestIntersection != null) {
+    final effectiveFps = fps > 0 ? fps : 60.0;
+    return FrameHitEstimate(
+      framesToHit: minT,
+      msToHit: (minT / effectiveFps) * 1000.0,
+      intersectionPoint: bestIntersection,
+    );
+  }
+  return null;
+}
+
 /// Orders 4 detected ArUco corner points into canonical [TL, TR, BR, BL] order
 /// by sorting their (x, y) coordinates regardless of detection input order.
 List<Offset> orderArUcoCorners(List<Offset> points) {
@@ -46,6 +105,7 @@ class ThudPainter extends CustomPainter {
   final List<Offset>? arucoCorners;
   final bool isBoundaryLocked;
   final int sensorOrientation;
+  final double fps;
 
   ThudPainter({
     required this.detection,
@@ -55,6 +115,7 @@ class ThudPainter extends CustomPainter {
     this.arucoCorners,
     this.isBoundaryLocked = false,
     this.sensorOrientation = 90,
+    this.fps = 60.0,
   });
 
   @override
@@ -251,7 +312,7 @@ class ThudPainter extends CustomPainter {
       canvas.drawCircle(sCenter, rad * 0.7, shockwavePaint2);
     }
 
-    // 5. Draw Ordered Boundary Quad Overlay (bright green when locked, glowing amber when wall contact, orange when editing)
+    // 5. Draw Ordered Boundary Quad Overlay & Wall Center Crosshair
     if (arucoCorners != null && arucoCorners!.length == 4) {
       final ordered = orderArUcoCorners(arucoCorners!);
       final screenQuad = ordered
@@ -299,6 +360,42 @@ class ThudPainter extends CustomPainter {
       canvas.drawPath(quadPath, fillPaint);
       canvas.drawPath(quadPath, quadPaint);
 
+      // Draw Wall Center Crosshair
+      final wallCenterScreen = Offset(
+        (screenQuad[0].dx + screenQuad[1].dx + screenQuad[2].dx + screenQuad[3].dx) / 4,
+        (screenQuad[0].dy + screenQuad[1].dy + screenQuad[2].dy + screenQuad[3].dy) / 4,
+      );
+
+      final centerCrossPaint = Paint()
+        ..color = const Color(0xFF00E5FF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawCircle(wallCenterScreen, 6.0, centerCrossPaint);
+      canvas.drawLine(
+        wallCenterScreen + const Offset(-10, 0),
+        wallCenterScreen + const Offset(10, 0),
+        centerCrossPaint,
+      );
+      canvas.drawLine(
+        wallCenterScreen + const Offset(0, -10),
+        wallCenterScreen + const Offset(0, 10),
+        centerCrossPaint,
+      );
+
+      final centerTextSpan = const TextSpan(
+        text: 'WALL CENTER',
+        style: TextStyle(
+          color: Color(0xFF00E5FF),
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.8,
+          shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+        ),
+      );
+      final centerTp = TextPainter(text: centerTextSpan, textDirection: TextDirection.ltr)
+        ..layout();
+      centerTp.paint(canvas, wallCenterScreen + const Offset(12, -6));
+
       // On-screen Status Badge when in Wall Contact Zone
       if (inWallZone) {
         final textSpan = TextSpan(
@@ -314,6 +411,61 @@ class ThudPainter extends CustomPainter {
         final tp = TextPainter(text: textSpan, textDirection: TextDirection.ltr)
           ..layout();
         tp.paint(canvas, Offset((size.width - tp.width) / 2, 45.0));
+      }
+
+      // 6. Live Trajectory & Impact Frame Countdown Badge
+      if (detection != null && detection!.detected && (detection!.vx.abs() > 0.5 || detection!.vy.abs() > 0.5)) {
+        final ballPos = Offset(detection!.x, detection!.y);
+        final ballVel = Offset(detection!.vx, detection!.vy);
+
+        final estimate = calculateFramesToHit(
+          ballPos: ballPos,
+          ballVel: ballVel,
+          quad: arucoCorners!,
+          fps: fps,
+        );
+
+        if (estimate != null) {
+          final impactScreen = toScreenOffset(
+            estimate.intersectionPoint.dx,
+            estimate.intersectionPoint.dy,
+          );
+          final ballScreen = toScreenOffset(ballPos.dx, ballPos.dy);
+
+          // Ray line to wall impact point
+          final rayPaint = Paint()
+            ..color = Colors.orangeAccent
+            ..strokeWidth = 2.0
+            ..style = PaintingStyle.stroke;
+          canvas.drawLine(ballScreen, impactScreen, rayPaint);
+
+          // Impact Reticle
+          canvas.drawCircle(
+            impactScreen,
+            8.0,
+            Paint()
+              ..color = Colors.orangeAccent
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2.5,
+          );
+
+          // Countdown Badge HUD
+          final badgeText =
+              'EST. HIT IN: ${estimate.framesToHit.toStringAsFixed(1)} FRAMES (${estimate.msToHit.toStringAsFixed(0)}ms)';
+          final badgeSpan = TextSpan(
+            text: badgeText,
+            style: const TextStyle(
+              color: Colors.orangeAccent,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+              shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+            ),
+          );
+          final badgeTp = TextPainter(text: badgeSpan, textDirection: TextDirection.ltr)
+            ..layout();
+          badgeTp.paint(canvas, Offset((size.width - badgeTp.width) / 2, 70.0));
+        }
       }
     }
   }

@@ -850,6 +850,7 @@ class ThudScreenState extends State<ThudScreen> with WidgetsBindingObserver {
                           arucoCorners: currentBoundary,
                           isBoundaryLocked: _isBoundaryLocked,
                           sensorOrientation: orientation,
+                          fps: _fps,
                         ),
                       ),
                       if (!_isBoundaryLocked)

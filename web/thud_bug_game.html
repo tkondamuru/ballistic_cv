@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BallisticCV · Proportional Thud Screen Monitor & Target Pins</title>
+  <title>BallisticCV · Thud Bug Squasher Game 🎯</title>
   <style>
     :root {
       --pin-size: 48px;
@@ -59,7 +59,6 @@
       opacity: var(--pin-opacity);
     }
 
-    /* Inner Crosshair Target Center */
     .marker-pin::after {
       content: '';
       position: absolute;
@@ -75,7 +74,7 @@
     #corner-br { bottom: var(--pin-margin); right: var(--pin-margin); }
     #corner-bl { bottom: var(--pin-margin); left: var(--pin-margin); }
 
-    /* Control Toolbar (Bottom Floating Expanded Center) */
+    /* Control Toolbar (Bottom Floating Center) */
     .toolbar {
       position: fixed;
       bottom: 16px;
@@ -123,9 +122,27 @@
     .stats {
       color: #FFEA00;
       font-family: monospace;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: bold;
       white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+    .stats:hover {
+      opacity: 0.85;
+      text-decoration: underline;
+    }
+
+    #speedVal {
+      display: inline-block;
+      min-width: 24px;
+      text-align: right;
+      font-family: monospace;
+      font-size: 11px;
+      color: #00FF66;
     }
 
     input[type="text"], input[type="number"], input[type="range"], select {
@@ -160,26 +177,6 @@
       white-space: nowrap;
       transition: all 0.15s ease;
     }
-    .btn:hover {
-      background: #33ff88;
-      box-shadow: 0 0 10px rgba(0, 255, 102, 0.4);
-    }
-
-    .step-btn {
-      background: #252d45;
-      color: #00FF66;
-      border: 1px solid #3d496e;
-      border-radius: 4px;
-      width: 20px;
-      height: 24px;
-      font-weight: bold;
-      font-size: 13px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      line-height: 1;
-    }
     .btn-calib {
       background: #ffaa00;
       color: #051a0b;
@@ -212,6 +209,33 @@
       pointer-events: none;
       white-space: nowrap;
     }
+
+    /* Centered Victory Banner (Non-blocking) */
+    .victory-badge {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(15, 17, 26, 0.95);
+      backdrop-filter: blur(12px);
+      color: #00FF66;
+      padding: 18px 36px;
+      border-radius: 24px;
+      font-size: 20px;
+      font-weight: 800;
+      z-index: 200;
+      box-shadow: 0 8px 36px rgba(0, 255, 102, 0.5);
+      border: 2px solid rgba(0, 255, 102, 0.7);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      animation: pulseGreen 2s infinite ease-in-out;
+      pointer-events: none;
+    }
+    @keyframes pulseGreen {
+      0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 102, 0.4); transform: translate(-50%, -50%) scale(1); }
+      50% { box-shadow: 0 0 35px rgba(0, 255, 102, 0.7); transform: translate(-50%, -50%) scale(1.04); }
+    }
   </style>
 </head>
 <body>
@@ -220,7 +244,12 @@
 
   <!-- Calibration Banner HUD -->
   <div id="calibBanner" class="calib-banner" style="display: none;">
-    📌 <b>CALIBRATION MODE</b>: Drag line from last THUD impact to target point. Press <b>ENTER</b> to apply!
+    📌 <b>CALIBRATION MODE</b>: Drag line from THUD impact to target point. Press <b>ENTER</b> to fix offset, <b>ESC</b> to cancel.
+  </div>
+
+  <!-- Centered Victory & Timer HUD Badge -->
+  <div id="victoryBadge" class="victory-badge" style="display: none;">
+    <span id="victoryText">🏆 YOU WIN! Squashed 5/5 in 12.4s!</span>
   </div>
 
   <!-- 4 Light Black Corner Pins (Matching Phone Alignment Quad) -->
@@ -231,17 +260,16 @@
 
   <!-- Control Toolbar (Bottom Floating Center) -->
   <div class="toolbar">
-    <!-- Red/Green Bulb Status Indicator (No Text) -->
     <div id="statusDot" class="dot" title="Disconnected. Click Connect to link relay."></div>
 
-    <!-- Connection Config (wss:// prefix omitted in display) -->
     <input type="text" id="wsUrlInput" style="width: 175px;" value="mcp.agility-maint.net" placeholder="mcp.agility-maint.net" />
     <input type="text" id="roomInput" style="width: 85px;" value="thud-room-1" placeholder="Room ID" />
     <button id="connectBtn" class="btn">Connect</button>
 
     <div class="divider"></div>
 
-    <span class="stats" id="hitCountDisplay">HITS: 0</span>
+    <span class="stats" id="hitCountDisplay" title="Double-click to set target squash goal">🦟 SQUASHED: 0/5</span>
+    <button id="resetBtn" class="btn btn-reset">Reset</button>
 
     <div class="divider"></div>
 
@@ -264,15 +292,29 @@
 
     <div class="divider"></div>
 
-    <!-- Pin Geometry Adjustments -->
+    <!-- Pin & Bug Adjustments -->
     <label title="Corner Target Pin Size">
-      Size:
-      <input type="range" id="sizeSlider" min="24" max="100" value="48" style="width: 45px;">
+      Pin Size:
+      <input type="range" id="sizeSlider" min="24" max="100" value="48" style="width: 40px;">
     </label>
 
     <label title="Corner Pin Edge Margin">
       Margin:
-      <input type="range" id="marginSlider" min="10" max="80" value="24" style="width: 45px;">
+      <input type="range" id="marginSlider" min="10" max="80" value="24" style="width: 40px;">
+    </label>
+
+    <div class="divider"></div>
+
+    <label title="Bug Crawling Speed (0 = Stopped stationary target for offset calibration)">
+      Bug Spd:
+      <input type="range" id="bugSpeedSlider" min="0" max="5.0" step="0.5" value="2.0" style="width: 45px;">
+      <span id="speedVal">2.0</span>
+    </label>
+
+    <label title="Bug Target Body Size">
+      Bug Size:
+      <input type="range" id="bugSizeSlider" min="12" max="60" step="2" value="28" style="width: 45px;">
+      <span id="bugSizeVal" style="font-family: monospace; font-size: 11px; color: #FFEA00;">28px</span>
     </label>
   </div>
 
@@ -285,24 +327,57 @@
     const wsUrlInput = document.getElementById('wsUrlInput');
     const roomInput = document.getElementById('roomInput');
     const connectBtn = document.getElementById('connectBtn');
+    const resetBtn = document.getElementById('resetBtn');
 
     const offsetXInput = document.getElementById('offsetXInput');
     const offsetYInput = document.getElementById('offsetYInput');
     const sizeSlider = document.getElementById('sizeSlider');
     const marginSlider = document.getElementById('marginSlider');
 
+    const bugSpeedSlider = document.getElementById('bugSpeedSlider');
+    const bugSizeSlider = document.getElementById('bugSizeSlider');
+    const speedVal = document.getElementById('speedVal');
+    const bugSizeVal = document.getElementById('bugSizeVal');
+
+    const victoryBadge = document.getElementById('victoryBadge');
+    const victoryText = document.getElementById('victoryText');
+
     const calibBtn = document.getElementById('calibBtn');
     const calibBanner = document.getElementById('calibBanner');
 
     let socket = null;
     let ripples = [];
+    let bloodSplatters = [];
     let totalHits = 0;
+    let targetHits = 5;
+    let gameWon = false;
+    let gameStartTime = null;
 
     // Interactive Calibration Pin State
     let isCalibrating = false;
     let lastThudPoint = null;
     let calibTargetPoint = null;
     let isDraggingCalib = false;
+
+    // Bug Target Object Definition
+    let bug = {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+      targetX: window.innerWidth / 2,
+      targetY: window.innerHeight / 2,
+      angle: 0,
+      speed: 2.0,
+      size: 28,
+      legPhase: 0,
+      changeTargetTimer: 0
+    };
+
+    function updateBugParams() {
+      bug.speed = parseFloat(bugSpeedSlider.value);
+      bug.size = parseInt(bugSizeSlider.value);
+      speedVal.innerText = bug.speed.toFixed(1);
+      bugSizeVal.innerText = `${bug.size}px`;
+    }
 
     // Toggle Vector Calibration Mode
     function toggleCalibrationMode() {
@@ -408,6 +483,16 @@
         marginSlider.value = localStorage.getItem('thud_pin_margin');
         document.documentElement.style.setProperty('--pin-margin', `${marginSlider.value}px`);
       }
+      if (localStorage.getItem('thud_bug_speed') !== null) {
+        bugSpeedSlider.value = localStorage.getItem('thud_bug_speed');
+      }
+      if (localStorage.getItem('thud_bug_size') !== null) {
+        bugSizeSlider.value = localStorage.getItem('thud_bug_size');
+      }
+      if (localStorage.getItem('thud_target_hits') !== null) {
+        targetHits = Math.max(1, parseInt(localStorage.getItem('thud_target_hits')) || 5);
+      }
+      updateBugParams();
     }
     loadSavedSettings();
 
@@ -418,14 +503,17 @@
       localStorage.setItem('thud_room', roomInput.value);
       localStorage.setItem('thud_pin_size', sizeSlider.value);
       localStorage.setItem('thud_pin_margin', marginSlider.value);
+      localStorage.setItem('thud_bug_speed', bugSpeedSlider.value);
+      localStorage.setItem('thud_bug_size', bugSizeSlider.value);
+      localStorage.setItem('thud_target_hits', targetHits);
     }
 
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      pickNewBugTarget();
     }
     window.addEventListener('resize', resize);
-    resize();
 
     // Offset Step Helper (- / + buttons)
     function stepOffset(axis, delta) {
@@ -447,6 +535,82 @@
       document.documentElement.style.setProperty('--pin-margin', `${e.target.value}px`);
       saveSettings();
     });
+
+    bugSpeedSlider.addEventListener('input', () => {
+      updateBugParams();
+      saveSettings();
+    });
+
+    bugSizeSlider.addEventListener('input', () => {
+      updateBugParams();
+      saveSettings();
+    });
+
+    // Double-click on SQUASHED display to set custom target squashes goal
+    hitCountDisplay.addEventListener('dblclick', () => {
+      const input = prompt(`Set Target Squash Goal (current: ${targetHits}):`, targetHits);
+      if (input !== null) {
+        const newGoal = parseInt(input.trim());
+        if (!isNaN(newGoal) && newGoal >= 1) {
+          targetHits = newGoal;
+          saveSettings();
+          resetGame();
+        }
+      }
+    });
+
+    // Pick random target location for the bug inside target quad area
+    function pickNewBugTarget() {
+      const margin = (parseInt(marginSlider.value) || 24) + 60;
+      const targetWidth = canvas.width - (2 * margin);
+      const targetHeight = canvas.height - (2 * margin);
+
+      bug.targetX = margin + Math.random() * Math.max(100, targetWidth);
+      bug.targetY = margin + Math.random() * Math.max(100, targetHeight);
+      bug.changeTargetTimer = 120 + Math.random() * 180; // frames
+    }
+
+    // Reset Game State
+    function resetGame() {
+      totalHits = 0;
+      gameWon = false;
+      gameStartTime = null;
+      bloodSplatters = [];
+      ripples = [];
+      hitCountDisplay.innerText = `MOSQUITO SQUASHED: 0/${targetHits}`;
+      victoryBadge.style.display = 'none';
+      bug.x = canvas.width / 2;
+      bug.y = canvas.height / 2;
+      pickNewBugTarget();
+    }
+    resetBtn.addEventListener('click', resetGame);
+
+    // Create Blood Splatter Graphics Object
+    function createBloodSplatter(x, y) {
+      const droplets = [];
+      const numDroplets = 14 + Math.floor(Math.random() * 12);
+
+      for (let i = 0; i < numDroplets; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 10 + Math.random() * 45;
+        const rad = 2 + Math.random() * 7;
+        droplets.push({
+          x: x + Math.cos(ang) * dist,
+          y: y + Math.sin(ang) * dist,
+          r: rad
+        });
+      }
+
+      bloodSplatters.push({
+        x: x,
+        y: y,
+        coreRadius: 18 + Math.random() * 10,
+        droplets: droplets,
+        color: '#D00030',
+        darkColor: '#800018',
+        hitNum: totalHits
+      });
+    }
 
     // Proportional Hit Mapping with Calibrated Offset Adjustments
     function addImpact(u, v, angle) {
@@ -477,18 +641,194 @@
         return;
       }
 
-      totalHits++;
-      hitCountDisplay.innerText = `HITS: ${totalHits}`;
+      if (gameWon) return;
 
-      ripples.push({
-        x: screenX,
-        y: screenY,
-        radius: 10,
-        maxRadius: 180,
-        alpha: 1.0,
-        angle: angle || 45,
-        hitNum: totalHits
-      });
+      // Distance check from impact point to current bug position
+      const dx = screenX - bug.x;
+      const dy = screenY - bug.y;
+      const dist = Math.hypot(dx, dy);
+
+      // Dynamic Hit Radius scaled with Bug Size (with minimum 35px tolerance)
+      const HIT_RADIUS = Math.max(35, bug.size * 1.8);
+
+      if (dist <= HIT_RADIUS) {
+        // DIRECT HIT! SQUASH THE BUG!
+        totalHits++;
+        if (totalHits === 1) {
+          gameStartTime = Date.now();
+        }
+
+        hitCountDisplay.innerText = `🦟 SQUASHED: ${totalHits}/${targetHits}`;
+        createBloodSplatter(bug.x, bug.y);
+
+        // Visual Hit Ripple
+        ripples.push({
+          x: screenX,
+          y: screenY,
+          radius: 10,
+          maxRadius: 180,
+          alpha: 1.0,
+          color: '#00FF66',
+          text: `HIT! #${totalHits}`
+        });
+
+        if (totalHits >= targetHits) {
+          gameWon = true;
+          const elapsedSec = gameStartTime ? ((Date.now() - gameStartTime) / 1000).toFixed(1) : '0.0';
+          victoryText.innerText = `🏆 YOU WIN! Squashed ${totalHits}/${targetHits} in ${elapsedSec}s!`;
+          victoryBadge.style.display = 'flex';
+        } else {
+          // Respawn bug at new location
+          pickNewBugTarget();
+          if (bug.speed > 0) {
+            bug.x = bug.targetX;
+            bug.y = bug.targetY;
+          }
+        }
+      } else {
+        // MISS!
+        ripples.push({
+          x: screenX,
+          y: screenY,
+          radius: 10,
+          maxRadius: 140,
+          alpha: 1.0,
+          color: '#FF3366',
+          text: `MISS!`
+        });
+      }
+    }
+
+    // Update Bug Movement AI
+    function updateBug() {
+      if (gameWon) return;
+
+      // When speed === 0, bug remains stationary at current location (for offset calibration mode)
+      if (bug.speed === 0) return;
+
+      bug.changeTargetTimer--;
+      if (bug.changeTargetTimer <= 0) {
+        pickNewBugTarget();
+      }
+
+      const dx = bug.targetX - bug.x;
+      const dy = bug.targetY - bug.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > 5) {
+        const targetAngle = Math.atan2(dy, dx);
+        // Smooth rotation
+        let diff = targetAngle - bug.angle;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        bug.angle += diff * 0.1;
+
+        bug.x += Math.cos(bug.angle) * bug.speed;
+        bug.y += Math.sin(bug.angle) * bug.speed;
+        bug.legPhase += 0.15 * bug.speed;
+      } else {
+        pickNewBugTarget();
+      }
+    }
+
+    // Draw Blood Splatters on Canvas
+    function drawBloodSplatters() {
+      for (const s of bloodSplatters) {
+        ctx.save();
+        ctx.fillStyle = s.color;
+
+        // Core Irregular Splatter
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.coreRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Darker Inner Core
+        ctx.fillStyle = s.darkColor;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.coreRadius * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Outer Droplets
+        ctx.fillStyle = s.color;
+        for (const d of s.droplets) {
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Hit Badge Marker over Splatter
+        ctx.fillStyle = '#00FF66';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText(`SQUASHED #${s.hitNum}`, s.x - 30, s.y + s.coreRadius + 16);
+
+        ctx.restore();
+      }
+    }
+
+    // Draw Active Bug
+    function drawBug() {
+      if (gameWon) return;
+
+      ctx.save();
+      ctx.translate(bug.x, bug.y);
+      ctx.rotate(bug.angle + Math.PI / 2);
+
+      const s = bug.size / 28.0;
+
+      // Draw 6 Animated Legs
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = Math.max(1.5, 3 * s);
+      ctx.lineCap = 'round';
+
+      const legSwing = Math.sin(bug.legPhase) * (12 * s);
+
+      // Top Legs
+      ctx.beginPath();
+      ctx.moveTo(0, -5 * s); ctx.lineTo((-22 * s) + legSwing, -18 * s);
+      ctx.moveTo(0, -5 * s); ctx.lineTo((22 * s) - legSwing, -18 * s);
+      // Middle Legs
+      ctx.moveTo(0, 0); ctx.lineTo((-26 * s) - legSwing, 0);
+      ctx.moveTo(0, 0); ctx.lineTo((26 * s) + legSwing, 0);
+      // Back Legs
+      ctx.moveTo(0, 5 * s); ctx.lineTo((-22 * s) + legSwing, 18 * s);
+      ctx.moveTo(0, 5 * s); ctx.lineTo((22 * s) - legSwing, 18 * s);
+      ctx.stroke();
+
+      // Bug Body (Dark Oval Beetle)
+      ctx.fillStyle = '#222222';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12 * s, 18 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Head
+      ctx.fillStyle = '#111111';
+      ctx.beginPath();
+      ctx.arc(0, -16 * s, 8 * s, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Antennae
+      ctx.strokeStyle = '#222222';
+      ctx.lineWidth = Math.max(1, 2 * s);
+      ctx.beginPath();
+      ctx.moveTo(-4 * s, -20 * s); ctx.lineTo(-12 * s, -30 * s);
+      ctx.moveTo(4 * s, -20 * s); ctx.lineTo(12 * s, -30 * s);
+      ctx.stroke();
+
+      // Red Bug Eyes
+      ctx.fillStyle = '#FF0033';
+      ctx.beginPath();
+      ctx.arc(-4 * s, -18 * s, Math.max(1.5, 2.5 * s), 0, Math.PI * 2);
+      ctx.arc(4 * s, -18 * s, Math.max(1.5, 2.5 * s), 0, Math.PI * 2);
+      ctx.fill();
+
+      // Wing Shell Split
+      ctx.strokeStyle = '#333333';
+      ctx.lineWidth = Math.max(1, 1.5 * s);
+      ctx.beginPath();
+      ctx.moveTo(0, -8 * s); ctx.lineTo(0, 16 * s);
+      ctx.stroke();
+
+      ctx.restore();
     }
 
     function draw() {
@@ -502,11 +842,18 @@
       ctx.strokeRect(margin, margin, canvas.width - (2 * margin), canvas.height - (2 * margin));
       ctx.setLineDash([]);
 
-      // Draw Ripples & Shockwaves
+      // 1. Render Permanent Blood Splatters
+      drawBloodSplatters();
+
+      // 2. Update and Render Active Bug
+      updateBug();
+      drawBug();
+
+      // 3. Draw Impact Ripples / Shockwaves
       for (let i = ripples.length - 1; i >= 0; i--) {
         const r = ripples[i];
         r.radius += 4.5;
-        r.alpha -= 0.02;
+        r.alpha -= 0.025;
 
         if (r.alpha <= 0 || r.radius >= r.maxRadius) {
           ripples.splice(i, 1);
@@ -516,39 +863,27 @@
         ctx.save();
         ctx.globalAlpha = Math.max(0, r.alpha);
 
-        // Neon Outer Shockwave Ring
         ctx.beginPath();
         ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = '#00FF66';
+        ctx.strokeStyle = r.color;
         ctx.lineWidth = 4;
-        ctx.shadowColor = '#00FF66';
+        ctx.shadowColor = r.color;
         ctx.shadowBlur = 18;
         ctx.stroke();
 
-        // Secondary Radial Glow Ring
-        ctx.beginPath();
-        ctx.arc(r.x, r.y, r.radius * 0.6, 0, Math.PI * 2);
-        ctx.strokeStyle = '#FFEA00';
-        ctx.lineWidth = 2;
-        ctx.shadowColor = '#FFEA00';
-        ctx.shadowBlur = 12;
-        ctx.stroke();
-
-        // Center Bullseye Reticle
         ctx.beginPath();
         ctx.arc(r.x, r.y, 8, 0, Math.PI * 2);
-        ctx.fillStyle = '#00FF66';
+        ctx.fillStyle = r.color;
         ctx.fill();
 
-        // Hit Badge Text
-        ctx.fillStyle = '#009933';
+        ctx.fillStyle = r.color;
         ctx.font = 'bold 15px monospace';
-        ctx.fillText(`THUD #${r.hitNum} (${Math.round(r.angle)}°)`, r.x + 16, r.y - 16);
+        ctx.fillText(r.text, r.x + 16, r.y - 16);
 
         ctx.restore();
       }
 
-      // Render Interactive Calibration Pin & Vector Drag Line (Only in Calibration Mode)
+      // 4. Render Interactive Calibration Pin & Vector Drag Line (Only in Calibration Mode)
       if (isCalibrating && lastThudPoint) {
         ctx.save();
 
@@ -598,6 +933,8 @@
 
       requestAnimationFrame(draw);
     }
+
+    resize();
     draw();
 
     // WebSocket Connection Handler
@@ -625,7 +962,7 @@
           statusDot.className = 'dot connected';
           statusDot.title = `ONLINE (${room}) - Connected to ${fullUrl}`;
           saveSettings();
-          console.log('[Thud Monitor] Connected to Cloudflare Relay:', fullUrl);
+          console.log('[Thud Game] Connected to Cloudflare Relay:', fullUrl);
         };
 
         socket.onmessage = (event) => {
@@ -657,7 +994,7 @@
 
     // Canvas click to test hit locally
     canvas.addEventListener('click', (e) => {
-      if (isCalibrating) return;
+      if (isCalibrating) return; // Prevent test hit while dragging calibration vector
 
       const margin = parseInt(marginSlider.value) || 24;
       const targetWidth = canvas.width - (2 * margin);
